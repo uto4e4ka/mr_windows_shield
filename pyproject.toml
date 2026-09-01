@@ -1,0 +1,16 @@
+[project]
+name = "mr-windows-shield"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "azhestkov"}
+]
+requires-python = ">=3.14"
+dependencies = [
+    "potehinsonnet @ file:///C:/Users/azhestkov/PycharmProjects/PotehinsonNet/dist/potehinsonnet-0.1.5-py3-none-any.whl"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
