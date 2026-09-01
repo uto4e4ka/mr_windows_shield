@@ -7,7 +7,9 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "potehinsonnet @ file:///C:/Users/azhestkov/PycharmProjects/PotehinsonNet/dist/potehinsonnet-0.1.5-py3-none-any.whl"
+    "potehinsonnet @ file:///C:/Users/alezh/PycharmProjects/Discord_Bots/poteninson_net/dist/potehinsonnet-0.1.11-py3-none-any.whl",
+    "dotenv (>=0.9.9,<0.10.0)"
+
 ]
 
 
