@@ -45,13 +45,13 @@ nkeys = ["nkeys"]
 
 [[package]]
 name = "potehinsonnet"
-version = "0.1.11"
+version = "0.1.18"
 description = ""
 optional = false
 python-versions = ">=3.14"
 groups = ["main"]
 files = [
-    {file = "potehinsonnet-0.1.11-py3-none-any.whl", hash = "sha256:4278a570184d765fd97e5e500fdb593a07c94c5365c28b60eb7620482aef6222"},
+    {file = "potehinsonnet-0.1.18-py3-none-any.whl", hash = "sha256:9347a93f2013048cba72691150fcc2714c18d4b6b316eb4b8750f2806416828e"},
 ]
 
 [package.dependencies]
@@ -60,7 +60,7 @@ pydantic = ">=2.13.5,<3.0.0"
 
 [package.source]
 type = "file"
-url = "../poteninson_net/dist/potehinsonnet-0.1.11-py3-none-any.whl"
+url = "../poteninson_net/dist/potehinsonnet-0.1.18-py3-none-any.whl"
 
 [[package]]
 name = "pydantic"
@@ -262,4 +262,4 @@ typing-extensions = ">=4.15.0"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.14"
-content-hash = "d679d05c00d2c064ebb4af24672a2437ddbd25a07ab3237c0e3ff2760b826870"
+content-hash = "9d998f8c1e7790fd21c62d650ee592e36ceb04ed1ac8dc3205a596895142c6c3"

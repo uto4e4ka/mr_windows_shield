@@ -1,10 +1,14 @@
+import asyncio
+
 from potehinsonnet.net import NatsClient
 from mr_windows_shield import config
-from potehinsonnet.net_models.discord_models import NatsMessage, DiscordMessage,Placeholder,PlaceholderType
+from potehinsonnet.net_models.discord_models import NatsMessage, DiscordMessage, Placeholder, PlaceholderType, \
+    VoiceChannelPlaySound
 
 import re
 from dotenv import load_dotenv
 import os
+from potehinsonnet.net_models.discord_models import VoiceChannelConnectInteraction, InteractionType,VoiceChannelUserConnectionEvent, VoiceChannelUserConnectionType
 
 load_dotenv()
 
@@ -30,7 +34,7 @@ class Core:
                 await self.send_message(
                     NatsMessage(service=config.PLUGIN_NAME,
                                 placeholders={
-                                    "user": Placeholder(type=PlaceholderType.MENTION,value=msg.user_id),
+                                    "user": Placeholder(type=PlaceholderType.MENTION,value=msg.user.user_id),
                                     "tag":Placeholder(type=PlaceholderType.TEXT,value=config.PLUGIN_TITLE),
                                     "source":Placeholder(type=PlaceholderType.TEXT,value=msg.text),
                                     "word":Placeholder(type=PlaceholderType.TEXT,value=word),
