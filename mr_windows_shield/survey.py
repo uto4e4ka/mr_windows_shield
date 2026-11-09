@@ -125,6 +125,7 @@ class Surveys:
             return "Сначала выберите, кого опрашивать"
         if target.unsubscribed:
             return f"{target.user_name} отписался от тестов — бот ему писать не будет"
+        await self._expire()                # тест прежнего человека или просроченный — закрыть до проверки
         if any(p.guild_id == guild_id for p in self.pending.all()):
             return "Предыдущий тест ещё не пройден — дождитесь ответа или часа на него"
         await self._send(target)
@@ -135,10 +136,15 @@ class Surveys:
 
     async def _expire(self) -> None:
         for survey in self.pending.all():
+            target = self.targets.get(survey.guild_id)
+            if target is None or target.user_id != survey.user_id:
+                # В панели выбрали другого человека (или никого): его тест отменяется, «уклонился» не пишем
+                self.pending.delete(survey.id)
+                await self._edit(survey, "🚫 Тест отменён.")
+                continue
             if survey.sent_at + ANSWER_TIME > self.now():
                 continue
             self.pending.delete(survey.id)
-            target = self.targets.get(survey.guild_id)
             self._save(survey, target.user_name if target else "Доркин", completed=False)
             done = f"\n\nУспел ответить:\n{_answers_text(survey.answers)}" if survey.answers else ""
             await self._edit(survey, f"⌛ Время на тест вышло — записано как «уклонился от ответа».{done}")

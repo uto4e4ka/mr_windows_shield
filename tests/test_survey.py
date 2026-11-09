@@ -190,3 +190,23 @@ async def test_send_now_reports_closed_dm(surveys, discord):
     discord.send_direct_message.side_effect = NatsRequestError("PermissionError: dorkin не принимает личные сообщения")
     with pytest.raises(RuntimeError, match="не принимает"):
         await surveys.send_now(GUILD)
+
+
+async def test_changing_person_cancels_previous_test(surveys, discord, book):
+    await surveys.tick()                                     # тест ушёл DORKIN
+    surveys.configure(GUILD, 555, 6, True)                   # админ выбрал другого
+    discord.send_direct_message.return_value = DiscordMessageResponse(channel_id=901, message_id=11)
+
+    await surveys.tick()
+
+    assert discord.send_direct_message.await_args.args[0] == 555
+    assert [p.user_id for p in surveys.pending.all()] == [555]
+    assert "отменён" in content(discord.update_message.await_args.args[0].message.containers)
+    assert book.tests.all() == []                            # отмена — не «уклонился»
+
+
+async def test_send_now_after_changing_person(surveys, discord):
+    await surveys.tick()
+    surveys.configure(GUILD, 555, 6, True)
+    assert await surveys.send_now(GUILD) == "Тест отправлен в личку"
+    assert discord.send_direct_message.await_args.args[0] == 555
