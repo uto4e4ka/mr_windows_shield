@@ -167,3 +167,26 @@ async def test_closed_dm_is_shown_and_retried_after_interval(surveys, discord):
     assert discord.send_direct_message.await_count == 1
     assert "не принимает" in surveys.targets.get(GUILD).last_error
     assert surveys.pending.all() == []
+
+
+async def test_send_now_ignores_schedule_and_night(surveys, discord, clock):
+    await surveys.tick()
+    await answer_all(surveys, [1, 1, 1, 1])
+    clock.value = datetime(2026, 11, 9, 22, 0, tzinfo=timezone.utc)          # ночь, интервал не прошёл
+    assert await surveys.send_now(GUILD) == "Тест отправлен в личку"
+    assert discord.send_direct_message.await_count == 2
+
+
+async def test_send_now_refuses_while_waiting_unsubscribed_or_unset(surveys, discord):
+    await surveys.tick()
+    assert "не пройден" in await surveys.send_now(GUILD)
+    await surveys.unsubscribe(click(f"{UNSUBSCRIBE_BUTTON}|{pending_id(surveys)}"))
+    assert "отписался" in await surveys.send_now(GUILD)
+    assert "выберите" in await surveys.send_now(2)
+    assert discord.send_direct_message.await_count == 1
+
+
+async def test_send_now_reports_closed_dm(surveys, discord):
+    discord.send_direct_message.side_effect = NatsRequestError("PermissionError: dorkin не принимает личные сообщения")
+    with pytest.raises(RuntimeError, match="не принимает"):
+        await surveys.send_now(GUILD)

@@ -3,7 +3,7 @@ import base64
 
 from potehinsonnet import Plugin, PluginContext
 from potehinsonnet.net_models.panel_ui import (
-    Form, Image, KeyValue, MemberPicker, NumberField, Option, PanelContext, PanelPage, Section, Select, Table,
+    Button, Form, Image, KeyValue, MemberPicker, NumberField, Option, PanelContext, PanelPage, Section, Select, Table,
     TableRow, Text, Toggle,
 )
 
@@ -96,6 +96,8 @@ def create_plugin(ctx: PluginContext) -> Plugin:
                             value=target.interval_hours if target else DEFAULT_INTERVAL_HOURS),
                 Toggle(name="enabled", label="Тест включён", value=target.enabled if target else True),
             ]),
+            Button(action="survey_send_now", label="📨 Отправить тест сейчас", style="primary",
+                   disabled=target is None or target.unsubscribed),
         ])
 
     def days_section(guild_id: int) -> Section:
@@ -136,6 +138,12 @@ def create_plugin(ctx: PluginContext) -> Plugin:
         if target.unsubscribed:
             return "Сохранено. Он отписался от тестов — писать ему бот не будет, наблюдение идёт"
         return "Сохранено"
+
+    @plugin.panel_action("survey_send_now")
+    async def survey_send_now(panel: PanelContext, values: dict) -> str:
+        if not panel.guild_id:
+            return "Настраивается в разделе сервера"
+        return await surveys.send_now(panel.guild_id)
 
     @plugin.panel_action("chart_period")
     async def set_chart_period(panel: PanelContext, values: dict) -> None:

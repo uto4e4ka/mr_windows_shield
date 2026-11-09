@@ -118,6 +118,21 @@ class Surveys:
             if when is not None and when <= self.now() and not busy:
                 await self._send(target)
 
+    async def send_now(self, guild_id: int) -> str:
+        """Кнопка в панели: отправить тест сразу, не дожидаясь расписания (и ночью тоже — решает админ)."""
+        target = self.targets.get(guild_id)
+        if target is None:
+            return "Сначала выберите, кого опрашивать"
+        if target.unsubscribed:
+            return f"{target.user_name} отписался от тестов — бот ему писать не будет"
+        if any(p.guild_id == guild_id for p in self.pending.all()):
+            return "Предыдущий тест ещё не пройден — дождитесь ответа или часа на него"
+        await self._send(target)
+        target = self.targets.get(guild_id)
+        if target.last_error:
+            raise RuntimeError(f"Не отправлено: {target.last_error}")
+        return "Тест отправлен в личку"
+
     async def _expire(self) -> None:
         for survey in self.pending.all():
             if survey.sent_at + ANSWER_TIME > self.now():
