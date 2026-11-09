@@ -676,14 +676,14 @@ files = [
 
 [[package]]
 name = "potehinsonnet"
-version = "0.19.0"
+version = "0.20.0"
 description = "Плагины для Discord-бота Potehinson: команды, кнопки, веб-панель и данные через NATS"
 optional = false
 python-versions = ">=3.14"
 groups = ["main"]
 files = [
-    {file = "potehinsonnet-0.19.0-py3-none-any.whl", hash = "sha256:f05caed6f4829e090df067a30e3f660208fbf495af073cfaff013c804c571132"},
-    {file = "potehinsonnet-0.19.0.tar.gz", hash = "sha256:622f71f0aef001aa5895313d0f7673455543d25fcb5fae48451d7e5b912ac117"},
+    {file = "potehinsonnet-0.20.0-py3-none-any.whl", hash = "sha256:e1b85c0b3a34254a2b847a82519ea5d31e9e2e17b8dd301edca27225af9f1c76"},
+    {file = "potehinsonnet-0.20.0.tar.gz", hash = "sha256:e64c115d96ea4915397d83e2bf5ca373129751f3d25dae578c45cb51d79e5d05"},
 ]
 
 [package.dependencies]
@@ -973,4 +973,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.14"
-content-hash = "b64d623141385b1147db6881ac57269f488514eb2919a251c28936e173d0ef99"
+content-hash = "f5ddedf24a06f5d6b874daa7845c5856d2a61828567dc58636beb04859da7ee7"
