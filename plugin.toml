@@ -2,17 +2,17 @@
 name = "mr_windows_shield"
 label = "🛡️ Mr. Windows Shield"
 description = "Ловит Linux-активность в чате и принимает репорты о Доркине"
-version = "1.2.0"
+version = "1.3.0"
 author = "Uto4ka404"
 
 [runtime]
 entry = "mr_windows_shield.main:create_plugin"
 python = ">=3.14"
-potehinsonnet = ">=0.19,<1.0"
+potehinsonnet = ">=0.20,<1.0"
 
 [permissions]
-# Тревоги и предупреждения в канал; /dorkin report; страница репортов в панели
-discord = ["send_message"]
+# Тревоги в канал; опрос в личку и погашенные кнопки опроса; /dorkin; страница в панели
+discord = ["send_message", "edit_message", "direct_message"]
 commands = true
 panel = true
 

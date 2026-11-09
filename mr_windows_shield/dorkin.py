@@ -40,7 +40,7 @@ class DorkinReports:
 
     def wait_left(self, guild_id: int, user_id: int) -> timedelta | None:
         """Сколько ещё ждать до следующего репорта; None — можно."""
-        last = next((r for r in self.for_guild(guild_id) if r.user_id == user_id), None)
+        last = next((r for r in self.for_guild(guild_id) if r.user_id == user_id and r.source == "report"), None)
         if last is None:
             return None
         left = last.created_at + COOLDOWN - self.now()

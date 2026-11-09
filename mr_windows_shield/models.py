@@ -32,12 +32,18 @@ class Report(BaseModel):
     channel_id: int
     user_id: int
     user_name: str
-    level: int                  # 1..len(LEVELS)
+    level: int                  # 1..len(LEVELS); MISSED_LEVEL — не ответил на опрос
     created_at: datetime        # UTC
-    source: str = "report"      # откуда запись: report — /dorkin report (дальше — auto, survey)
+    source: str = "report"      # report — /dorkin report, survey — ответ на опрос, missed — не ответил
+
+
+MISSED_LEVEL = 0
+SOURCE_TITLES = {"report": "Репорт", "survey": "Опрос", "missed": "Опрос"}
 
 
 def level_title(level: int) -> str:
+    if level == MISSED_LEVEL:
+        return "🙈 Уклонился от ответа"
     item = LEVELS[level - 1]
     return f"{item.emoji} {item.label}"
 

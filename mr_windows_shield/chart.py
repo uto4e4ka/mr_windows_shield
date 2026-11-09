@@ -10,7 +10,7 @@ matplotlib.use("Agg")       # без окна: рисуем только в фа
 import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
-from mr_windows_shield.models import LEVELS, MSK, Report  # noqa: E402
+from mr_windows_shield.models import LEVELS, MISSED_LEVEL, MSK, Report  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,8 @@ DEFAULT_PERIOD = "week"
 # Откуда точка: ручной репорт, позже — авто-обнаружение и самооценка из опроса
 SOURCES = {
     "report": ("Репорты", "#e8590c", "o"),
+    "survey": ("Самооценка (опрос)", "#4dabf7", "D"),
+    "missed": ("Уклонился от ответа", "#868e96", "X"),
 }
 LEVEL_COLORS = ["#2f9e44", "#f0c419", "#f08c00", "#e03131", "#9c36b5"]
 
@@ -65,12 +67,20 @@ def render_chart(reports: list[Report], period: Period, now: datetime) -> bytes:
                 continue
             times = [r.created_at.astimezone(MSK) for r in own]
             levels = [r.level for r in own]
+            if source == "missed":      # пропуски — отдельным рядом снизу, без линии
+                ax.scatter(times, levels, color=color, marker=marker, s=60, zorder=3, label=label)
+                continue
             ax.plot(times, levels, color=color, alpha=0.35, linewidth=1.5)
             ax.scatter(times, levels, color=[LEVEL_COLORS[lv - 1] for lv in levels], edgecolors=color,
                        marker=marker, s=60, zorder=3, label=label)
 
-        ax.set_ylim(0.5, len(LEVELS) + 0.5)
-        ax.set_yticks(range(1, len(LEVELS) + 1), [level.label for level in LEVELS])
+        ticks = list(range(1, len(LEVELS) + 1))
+        labels = [level.label for level in LEVELS]
+        if any(r.level == MISSED_LEVEL for r in points):
+            ticks.insert(0, MISSED_LEVEL)
+            labels.insert(0, "Уклонился")
+        ax.set_ylim(ticks[0] - 0.5, len(LEVELS) + 0.5)
+        ax.set_yticks(ticks, labels)
         ax.set_xlim(start.astimezone(MSK), now.astimezone(MSK))
         ax.xaxis.set_major_formatter(mdates.DateFormatter(period.date_format, tz=MSK))
         ax.grid(axis="x", color="#4e5058", alpha=0.5, linewidth=0.6)
@@ -81,7 +91,7 @@ def render_chart(reports: list[Report], period: Period, now: datetime) -> bytes:
             for text in legend.get_texts():
                 text.set_color("#dbdee1")
         else:
-            ax.text(0.5, 0.5, "За этот период репортов нет", transform=ax.transAxes, ha="center",
+            ax.text(0.5, 0.5, "За этот период записей нет", transform=ax.transAxes, ha="center",
                     va="center", color="#949ba4", fontsize=12)
 
         fig.tight_layout()
