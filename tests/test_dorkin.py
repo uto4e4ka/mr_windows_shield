@@ -148,7 +148,8 @@ async def test_panel_page_chart_and_period(tmp_path):
     assert blocks[0].items["Общий индекс"] == "нет данных"
     assert blocks[1].fields[0].value == "week"
     assert blocks[2].url.startswith("data:image/png;base64,")
-    assert [b.title for b in blocks[3:]] == ["📨 Тест в личку и наблюдение", "📅 По дням", "🧾 Репорты и тесты"]
+    assert [b.title for b in blocks[3:]] == ["📨 Тест в личку и наблюдение", "📊 Утренняя сводка", "📅 По дням",
+                                            "🗓 События и анализ", "🧾 Репорты и тесты"]
 
     await plugin.panel.actions["chart_period"](panel, {"period": "day"})
     assert (await page(panel)).blocks[1].fields[0].value == "day"

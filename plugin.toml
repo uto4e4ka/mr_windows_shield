@@ -2,7 +2,7 @@
 name = "mr_windows_shield"
 label = "🛡️ Mr. Windows Shield"
 description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
-version = "1.4.2"
+version = "1.5.0"
 author = "Uto4ka404"
 
 [runtime]
@@ -33,3 +33,18 @@ default = "вартандер, вар тандер, war thunder, warthunder, т�
 [settings.watch_women]
 label = "Наблюдение: слова про женщин"
 default = "женщин, девушк, девочк, тян, тянк, тяночк, баба, бабы, бабу, бабе, бабам, телк"
+
+[settings.events_warthunder]
+label = "События: новости War Thunder"
+type = "bool"
+default = true
+
+[settings.events_wiki]
+label = "События: «Текущие события» Википедии"
+type = "bool"
+default = true
+
+[settings.events_holiday]
+label = "События: праздники РФ"
+type = "bool"
+default = true

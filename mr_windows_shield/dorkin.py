@@ -32,6 +32,7 @@ class DorkinReports:
                  now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
         self.book = book
         self.reports = book.reports
+        self.events = None          # EventBook — подключается в main, чтобы события были и на /dorkin chart
         self.discord = discord
         self.now = now
 
@@ -117,7 +118,7 @@ class DorkinReports:
     ))
     async def chart(self, cmd: ExecutedCommand) -> ExecutedCommandResponse:
         period = period_by_name(next((a.value for a in cmd.args if a.name == "period"), None))
-        image = render_chart(self.book, cmd.guild.id, period, self.now())
+        image = render_chart(self.book, cmd.guild.id, period, self.now(), events=self.events)
         return ExecutedCommandResponse(
             ephemeral=False,
             files=[Attachment.from_bytes(image, CHART_FILE, description="График выделения")],

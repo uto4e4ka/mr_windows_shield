@@ -6,17 +6,22 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
+from potehinsonnet.discord_provider import DiscordProvider
 from potehinsonnet.net import NatsClient
-from potehinsonnet.net_models.discord_models import DiscordMessage
+from potehinsonnet.net_models.discord_models import DiscordMessage, NatsMessage, Placeholder, PlaceholderType
+
+from mr_windows_shield import config
 
 from mr_windows_shield.index import IndexBook, day_id
 from mr_windows_shield.models import DayObservation, msk_day
+from mr_windows_shield.survey import ANSWER_TIME
 
 TOPIC_POINTS = 3
 CAPS_POINTS, CAPS_MIN_LETTERS = 2, 10
 SHOUT_POINTS = 1
 LONG_POINTS, LONG_LENGTH = 2, 500
 BURST_WINDOW, BURST_FREE = timedelta(minutes=1), 5      # сверх 5 сообщений в минуту — +1 за каждое
+REMIND_EVERY, REMIND_PAUSE = 5, timedelta(minutes=10)   # напоминание о тесте: каждое 5-е сообщение, не чаще 10 мин
 
 DEFAULT_TOPICS = {
     "airfryer": "аэрогрил, аэрофритюр, airfryer, air fryer",
@@ -65,14 +70,38 @@ def score_text(text: str, topics: list[Topic]) -> dict[str, int]:
 
 
 class ChatObserver:
-    def __init__(self, nats: NatsClient, book: IndexBook, targets, topics: list[Topic],
+    def __init__(self, nats: NatsClient, book: IndexBook, surveys, topics: list[Topic],
+                 discord: DiscordProvider | None = None,
                  now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
         self.nats = nats
         self.book = book
-        self.targets = targets              # кого наблюдаем — тот же, кого опрашиваем (Surveys.targets)
+        self.surveys = surveys
+        self.targets = surveys.targets      # кого наблюдаем — тот же, кого опрашиваем
         self.topics = topics
+        self.discord = discord
         self.now = now
         self._recent: dict[tuple[int, int], deque[datetime]] = defaultdict(deque)
+        self._reminders: dict[str, tuple[int, datetime | None]] = {}   # тест → (сообщений с прошлого, когда напомнили)
+
+    async def _remind(self, msg: DiscordMessage) -> None:
+        """Пока тест не пройден — на каждое REMIND_EVERY-е его сообщение, не чаще REMIND_PAUSE, напомнить в чате."""
+        survey = next((p for p in self.surveys.pending.all()
+                       if p.guild_id == msg.guild_id and p.user_id == msg.user.id), None)
+        if survey is None or self.discord is None:
+            return
+        count, last = self._reminders.get(survey.id, (0, None))
+        count += 1
+        now = self.now()
+        if count < REMIND_EVERY or (last is not None and now - last < REMIND_PAUSE):
+            self._reminders[survey.id] = (count, last)
+            return
+        self._reminders = {survey.id: (0, now)}         # старые тесты больше не нужны
+        left = max(1, int((survey.sent_at + ANSWER_TIME - now).total_seconds() // 60))
+        await self.discord.send_message(NatsMessage(
+            service=config.PLUGIN_NAME, channel_id=msg.channel_id,
+            text=f"📨 %user%, у вас непройденный тест в личке. Осталось {left} мин.",
+            placeholders={"user": Placeholder(type=PlaceholderType.MENTION, value=msg.user.id)},
+        ))
 
     def _burst(self, guild_id: int, user_id: int) -> int:
         now = self.now()
@@ -89,6 +118,7 @@ class ChatObserver:
         target = self.targets.get(msg.guild_id)
         if target is None or target.user_id != msg.user.id:
             return
+        await self._remind(msg)
 
         reasons = score_text(msg.text, self.topics)
         if burst := self._burst(msg.guild_id, msg.user.id):

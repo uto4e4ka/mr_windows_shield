@@ -43,7 +43,8 @@ def _level_color(value: float) -> str:
     return LEVEL_COLORS[min(len(LEVELS), int(max(0.0, value) // INDEX_STEP) + 1) - 1]
 
 
-def render_chart(book, guild_id: int, period: Period, now: datetime) -> bytes:
+def render_chart(book, guild_id: int, period: Period, now: datetime, events=None) -> bytes:
+    """events — EventBook: свои события и праздники — пунктиром с подписью, новости War Thunder — метками сверху."""
     start = now - period.span
     local = lambda moment: moment.astimezone(MSK)  # noqa: E731
 
@@ -86,6 +87,21 @@ def render_chart(book, guild_id: int, period: Period, now: datetime) -> bytes:
                        marker="o", s=40, zorder=4, color=[LEVEL_COLORS[r.level - 1] for r in reports],
                        edgecolors="#e8590c", label="Репорт")
 
+        if events is not None:
+            shown = [e for e in events.for_guild(guild_id) if day_start(e.day) + timedelta(days=1) > start
+                     and day_start(e.day) <= now]
+            marked = [e for e in shown if e.source in ("manual", "holiday")]
+            for event in marked:
+                middle = local(day_start(event.day) + timedelta(hours=12))
+                ax.axvline(middle, color="#74c0fc" if event.source == "manual" else "#ffd43b",
+                           linestyle=":", linewidth=1.2, zorder=2)
+                ax.text(middle, 97, event.title[:28], rotation=90, va="top", ha="right", fontsize=7,
+                        color="#c1c2c5", zorder=5)
+            game = sorted({e.day for e in shown if e.source == "warthunder"})
+            if game:
+                ax.scatter([local(day_start(d) + timedelta(hours=12)) for d in game], [99] * len(game),
+                           marker="v", s=30, color="#ffa94d", zorder=5, clip_on=False, label="Новости WT")
+
         ax.set_ylim(0, 100)
         ax.set_yticks([(n + 0.5) * INDEX_STEP for n in range(len(LEVELS))], [lv.label for lv in LEVELS])
         numbers = ax.twinx()                    # справа — сам индекс 0–100
@@ -99,7 +115,7 @@ def render_chart(book, guild_id: int, period: Period, now: datetime) -> bytes:
         ax.grid(axis="x", color=GRID, alpha=0.5, linewidth=0.6)
         ax.set_title(f"Индекс Доркина за {period.title}", color="#f2f3f5", fontsize=12)
 
-        if days or tests or reports:
+        if ax.get_legend_handles_labels()[0]:
             legend = ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), facecolor=BACK, edgecolor=GRID,
                                fontsize=8, ncol=5)
             for text in legend.get_texts():

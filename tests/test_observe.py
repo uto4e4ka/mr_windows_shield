@@ -48,7 +48,7 @@ def setup(tmp_path):
     book = IndexBook(DataDir(tmp_path), now=clock)
     surveys = Surveys(DataDir(tmp_path), None, book, now=clock)
     surveys.configure(GUILD, DORKIN, 6, True)
-    return ChatObserver(None, book, surveys.targets, TOPICS, now=clock), book, clock
+    return ChatObserver(None, book, surveys, TOPICS, now=clock), book, clock
 
 
 def message(text, user_id=DORKIN, guild_id=GUILD):
