@@ -1,4 +1,5 @@
-"""События для анализа Индекса Доркина: свои (из панели), новости War Thunder, праздники РФ, «Текущие события» Википедии.
+"""События для анализа Индекса Доркина: свои (из панели), новости War Thunder, праздники РФ, «Текущие события» Википедии,
+новости мира из RSS-лент (адреса — в настройках).
 
 Автоматические события общие для всех серверов (guild_id=None), свои — только своего сервера.
 Анализ: средний дневной индекс в день события и на следующий день против остальных дней.
@@ -7,9 +8,12 @@ import hashlib
 import html
 import logging
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Awaitable, Callable
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel
@@ -23,13 +27,19 @@ WT_NEWS_URL = "https://warthunder.com/en/news/"
 WIKI_API = "https://ru.wikipedia.org/w/api.php"
 WIKI_PAGE = "Портал:Текущие события/Последние события"
 REFRESH_EVERY = timedelta(hours=6)
+NEWS_PER_FEED_PER_DAY = 5
+# Ленты, которые обычно открываются из России (Медуза и BBC там заблокированы — добавьте сами, если бот за границей)
+DEFAULT_NEWS_FEEDS = ("https://rssexport.rbc.ru/rbcnews/news/30/full.rss, https://lenta.ru/rss/news/world, "
+                      "https://ria.ru/export/rss2/world/index.xml, https://tass.ru/rss/v2.xml, "
+                      "https://www.interfax.ru/rss.asp")
 MIN_DAYS_FOR_ANALYSIS = 3
 
 SOURCES = {
     "manual": "✍️ Своё",
     "holiday": "🎉 Праздник",
     "warthunder": "✈️ War Thunder",
-    "wiki": "🌍 В мире",
+    "wiki": "🌍 Википедия",
+    "news": "📰 Новости мира",
 }
 
 MONTHS_RU = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября",
@@ -124,6 +134,45 @@ def holidays_around(today: date) -> list[Event]:
             for (month, dom), name in HOLIDAYS.items()]
 
 
+def parse_rss(xml_text: str, feed_url: str) -> list[Event]:
+    """RSS 2.0: заголовок, ссылка, дата (pubDate), рубрика. С каждой ленты — не больше 5 новостей за день (первые = свежие)."""
+    root = ET.fromstring(xml_text)
+    per_day: dict[date, int] = {}
+    events = []
+    for item in root.iter("item"):
+        title = html.unescape((item.findtext("title") or "").strip())
+        published = item.findtext("pubDate")
+        if not title or not published:
+            continue
+        try:
+            day = msk_day(parsedate_to_datetime(published))
+        except (TypeError, ValueError):
+            continue
+        if per_day.get(day, 0) >= NEWS_PER_FEED_PER_DAY:
+            continue
+        per_day[day] = per_day.get(day, 0) + 1
+        link = (item.findtext("link") or "").strip()
+        rubric = (item.findtext("category") or "").strip()
+        events.append(Event(id=f"news:{_hash(link or title)}", day=day, title=title,
+                            category=f"Новости: {rubric}" if rubric else "Новости мира",
+                            source="news", url=link))
+    return events
+
+
+def news_feeds(settings: dict) -> list[str]:
+    raw = settings.get("news_feeds")
+    return [url.strip() for url in str(DEFAULT_NEWS_FEEDS if raw is None else raw).split(",") if url.strip()]
+
+
+def feed_fetcher(url: str) -> Callable[[httpx.AsyncClient, date], Awaitable[list[Event]]]:
+    async def fetch(client: httpx.AsyncClient, today: date) -> list[Event]:
+        response = await client.get(url)
+        response.raise_for_status()
+        return parse_rss(response.text, url)
+
+    return fetch
+
+
 async def fetch_warthunder(client: httpx.AsyncClient) -> list[Event]:
     response = await client.get(WT_NEWS_URL)
     response.raise_for_status()
@@ -154,10 +203,14 @@ class EventBook:
                  fetchers: dict[str, Callable[..., Awaitable[list[Event]]]] | None = None):
         self.events = data.collection("events.json", Event, key="id")
         settings = settings or {}
-        self.enabled = {source: bool(settings.get(f"events_{source}", True)) for source in ("warthunder", "wiki", "holiday")}
+        self.enabled = {source: bool(settings.get(f"events_{source}", True))
+                        for source in ("warthunder", "wiki", "holiday", "news")}
         self.now = now
-        self.fetchers = fetchers or {"warthunder": lambda client, today: fetch_warthunder(client),
-                                     "wiki": fetch_wiki}
+        if fetchers is None:
+            # Ключ — «источник» или «источник адрес»: у каждой ленты новостей своя ошибка в панели
+            fetchers = {"warthunder": lambda client, today: fetch_warthunder(client), "wiki": fetch_wiki}
+            fetchers.update({f"news {urlparse(url).hostname}": feed_fetcher(url) for url in news_feeds(settings)})
+        self.fetchers = fetchers
         self.last_refresh: datetime | None = None
         self.last_errors: dict[str, str] = {}
 
@@ -189,7 +242,7 @@ class EventBook:
         found: list[Event] = holidays_around(today) if self.enabled["holiday"] else []
         async with httpx.AsyncClient(timeout=20, headers={"User-Agent": USER_AGENT}, follow_redirects=True) as client:
             for source, fetch in self.fetchers.items():
-                if not self.enabled.get(source, True):
+                if not self.enabled.get(source.split()[0], True):
                     continue
                 try:
                     found += await fetch(client, today)

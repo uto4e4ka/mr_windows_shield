@@ -21,6 +21,7 @@ from mr_windows_shield.observe import TOPIC_TITLES
 SUMMARY_HOUR = 10               # МСК
 SUMMARY_CHART = "dorkin_summary.png"
 WORLD_SHOWN, WORLD_LENGTH = 2, 140
+NEWS_SHOWN = 3
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,10 @@ class SummaryConfig(BaseModel):
     guild_id: int
     channel_id: int | None = None
     last_sent_day: date | None = None   # день (МСК), когда сводка уже ушла
+
+
+def short(title: str) -> str:
+    return title if len(title) <= WORLD_LENGTH else title[:WORLD_LENGTH - 1] + "…"
 
 
 def delta(now: float | None, before: float | None) -> str:
@@ -85,13 +90,15 @@ class Summaries:
             lines.append(f"Ответы (среднее): {averages}")
 
         day_events = self.events.for_day(guild_id, day)
-        ours = [e for e in day_events if e.source != "wiki"][:3]
+        ours = [e for e in day_events if e.source not in ("wiki", "news")][:3]
         if ours:
             lines.append("📅 События дня: " + "; ".join(f"{SOURCES[e.source].split()[0]} {e.title}" for e in ours))
-        world = [e for e in day_events if e.source == "wiki"][:WORLD_SHOWN]
-        for event in world:
-            title = event.title if len(event.title) <= WORLD_LENGTH else event.title[:WORLD_LENGTH - 1] + "…"
-            lines.append(f"🌍 {title}")
+        news = [e for e in day_events if e.source == "news"][:NEWS_SHOWN]
+        if news:
+            lines.append("📰 В мире:")
+            lines += [f"• {short(e.title)}" for e in news]
+        for event in [e for e in day_events if e.source == "wiki"][:WORLD_SHOWN]:
+            lines.append(f"🌍 {short(event.title)}")
         return "\n".join(lines)
 
     async def send(self, guild_id: int, day: date | None = None) -> str:

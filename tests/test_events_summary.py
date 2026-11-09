@@ -214,3 +214,61 @@ async def test_reminder_every_fifth_message_not_more_than_every_10_min(tmp_path)
     clock.value += timedelta(minutes=5)
     await observer.on_message(msg)
     assert discord.send_message.await_count == 2
+
+
+RSS = """<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>Лента</title>
+""" + "".join(f"""<item><title>Новость {i} &amp; ещё</title><link>https://x.ru/{i}</link>
+<category>Политика</category><pubDate>Mon, 09 Nov 2026 {10 + i}:00:00 +0300</pubDate></item>""" for i in range(7)) + """
+<item><title>Ночная</title><link>https://x.ru/n</link><pubDate>Sun, 08 Nov 2026 22:30:00 +0000</pubDate></item>
+<item><title>Без даты</title></item>
+</channel></rss>"""
+
+
+def test_parse_rss_limits_per_day_and_uses_msk():
+    from mr_windows_shield.events import parse_rss
+    events = parse_rss(RSS, "https://x.ru/rss")
+    nov9 = [e for e in events if e.day == date(2026, 11, 9)]
+    assert len(nov9) == 5 and "Ночная" not in [e.title for e in events]     # лимит 5 в день на ленту
+    assert nov9[0].title == "Новость 0 & ещё" and nov9[0].category == "Новости: Политика"
+    assert nov9[0].url == "https://x.ru/0" and nov9[0].source == "news"
+
+    night = parse_rss("""<rss><channel><item><title>Ночная</title>
+        <pubDate>Sun, 08 Nov 2026 22:30:00 +0000</pubDate></item></channel></rss>""", "https://x.ru/rss")
+    assert [(e.day, e.category) for e in night] == [(date(2026, 11, 9), "Новости мира")]   # 01:30 МСК — уже 09.11
+
+
+def test_news_feeds_from_settings():
+    from mr_windows_shield.events import DEFAULT_NEWS_FEEDS, news_feeds
+    assert news_feeds({}) == [u.strip() for u in DEFAULT_NEWS_FEEDS.split(",")]
+    assert news_feeds({"news_feeds": " https://a.ru/rss , https://b.ru/rss"}) == ["https://a.ru/rss", "https://b.ru/rss"]
+    assert news_feeds({"news_feeds": ""}) == []
+
+
+async def test_each_feed_has_own_error(tmp_path):
+    async def ok(client, today):
+        return [Event(id="news:1", day=today, title="Новость", category="Новости мира", source="news")]
+
+    async def down(client, today):
+        raise RuntimeError("таймаут")
+
+    events = EventBook(DataDir(tmp_path), {"events_holiday": False},
+                       now=Clock(datetime(2026, 11, 9, 12, tzinfo=timezone.utc)),
+                       fetchers={"news a.ru": ok, "news b.ru": down})
+    await events.refresh()
+    assert events.events.get("news:1") is not None
+    assert list(events.last_errors) == ["news b.ru"]
+
+
+def test_news_sources_are_switched_off_together(tmp_path):
+    events = EventBook(DataDir(tmp_path), {"events_news": False, "news_feeds": "https://a.ru/rss"})
+    assert "news a.ru" in events.fetchers and events.enabled["news"] is False
+
+
+async def test_summary_lists_world_news(tmp_path, book):
+    events = EventBook(DataDir(tmp_path), {})
+    d19 = date(2026, 11, 19)
+    for i in range(4):
+        events.events.put(Event(id=f"n{i}", day=d19, title=f"Заголовок {i}", category="Новости мира", source="news"))
+    text = Summaries(DataDir(tmp_path), AsyncMock(), book, events, now=book.now).text(GUILD, d19)
+    assert "📰 В мире:\n• Заголовок 0\n• Заголовок 1\n• Заголовок 2" in text and "Заголовок 3" not in text
+    assert "📅 События дня" not in text                       # новости — не «события дня»

@@ -30,6 +30,12 @@ SCHEDULER_SECONDS = 60
 logger = logging.getLogger(__name__)
 
 
+def source_title(key: str) -> str:
+    """«news lenta.ru» → «📰 Новости мира lenta.ru»."""
+    source, _, rest = key.partition(" ")
+    return f"{SOURCES.get(source, source)} {rest}".strip()
+
+
 def signed(value: float) -> str:
     return f"{value:+g}" if value else "0"
 
@@ -118,7 +124,7 @@ def create_plugin(ctx: PluginContext) -> Plugin:
     def world_section(guild_id: int) -> Section:
         stats = events.analysis(guild_id, [d for d in book.history(guild_id) if d.overall is not None])
         listed = events.for_guild(guild_id)[:WORLD_EVENTS_SHOWN]
-        errors = {f"Ошибка: {SOURCES.get(k, k)}": v for k, v in events.last_errors.items()}
+        errors = {f"Ошибка: {source_title(k)}": v for k, v in events.last_errors.items()}
         return Section(title="🗓 События и анализ", collapsed=True, blocks=[
             Text("Средний дневной индекс в дни событий и на следующий день против остальных дней "
                  "(по закрытым дням, категория — от 3 дней)."),
@@ -255,7 +261,7 @@ def create_plugin(ctx: PluginContext) -> Plugin:
         await events.refresh(force=True)
         if events.last_errors:
             return "Обновлено с ошибками: " + "; ".join(
-                f"{SOURCES.get(k, k)} — {v}" for k, v in events.last_errors.items())
+                f"{source_title(k)} — {v}" for k, v in events.last_errors.items())
         return "Источники обновлены"
 
     @plugin.panel_action("chart_period")
