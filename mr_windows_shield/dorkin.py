@@ -10,10 +10,10 @@ from potehinsonnet.net_models.discord_models import (
 from potehinsonnet.discord_provider import DiscordProvider
 from potehinsonnet.setup.button_registrator import ID_SEPARATOR, button
 from potehinsonnet.setup.command_registrator import command
-from potehinsonnet.storage import DataDir
 
 from mr_windows_shield import config
 from mr_windows_shield.chart import period_by_name, render_chart
+from mr_windows_shield.index import IndexBook
 from mr_windows_shield.models import LEVELS, Report, format_time, level_title
 
 COOLDOWN = timedelta(minutes=30)        # один репорт от человека на сервере раз в 30 минут
@@ -28,9 +28,10 @@ def card(text: str) -> list[Container]:
 
 
 class DorkinReports:
-    def __init__(self, data: DataDir, discord: DiscordProvider,
+    def __init__(self, book: IndexBook, discord: DiscordProvider,
                  now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
-        self.reports = data.collection("reports.json", Report, key="id")
+        self.book = book
+        self.reports = book.reports
         self.discord = discord
         self.now = now
 
@@ -107,7 +108,7 @@ class DorkinReports:
     @command(Command(
         name="chart",
         group="dorkin",
-        description="График степени выделения Доркина",
+        description="График Индекса Доркина: дневной, общий, репорты и тесты",
         tag="dorkin_chart",
         permission=PERMISSION,
         ephemeral=False,
@@ -116,12 +117,12 @@ class DorkinReports:
     ))
     async def chart(self, cmd: ExecutedCommand) -> ExecutedCommandResponse:
         period = period_by_name(next((a.value for a in cmd.args if a.name == "period"), None))
-        image = render_chart(self.for_guild(cmd.guild.id), period, self.now())
+        image = render_chart(self.book, cmd.guild.id, period, self.now())
         return ExecutedCommandResponse(
             ephemeral=False,
             files=[Attachment.from_bytes(image, CHART_FILE, description="График выделения")],
             containers=[Container(components=[
-                TextDisplay(content=f"📈 **Степень выделения Доркина за {period.title}**"),
+                TextDisplay(content=f"📈 **Индекс Доркина за {period.title}**"),
                 MediaGallery(items=[MediaItem(url=f"attachment://{CHART_FILE}")]),
             ])],
         )

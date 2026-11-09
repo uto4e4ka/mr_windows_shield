@@ -1,13 +1,13 @@
 [project]
 name = "mr-windows-shield"
-version = "1.3.0"
-description = "Ловит Linux-активность в чате и принимает репорты о Доркине"
+version = "1.4.0"
+description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
 authors = [
     {name = "azhestkov"}
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "potehinsonnet (>=0.20,<1.0)",
+    "potehinsonnet (>=0.21,<1.0)",
     "matplotlib (>=3.10,<4.0)",
 ]
 

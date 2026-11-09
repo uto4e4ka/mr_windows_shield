@@ -1,4 +1,4 @@
-"""График степени выделения по времени: PNG для панели и для Discord."""
+"""График Индекса Доркина: дневной — столбики, общий — линия, репорты и тесты — точки. PNG для панели и Discord."""
 import io
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -10,7 +10,7 @@ matplotlib.use("Agg")       # без окна: рисуем только в фа
 import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
-from mr_windows_shield.models import LEVELS, MISSED_LEVEL, MSK, Report  # noqa: E402
+from mr_windows_shield.models import INDEX_STEP, LEVELS, MSK, day_start  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -28,13 +28,8 @@ PERIODS = {
 }
 DEFAULT_PERIOD = "week"
 
-# Откуда точка: ручной репорт, позже — авто-обнаружение и самооценка из опроса
-SOURCES = {
-    "report": ("Репорты", "#e8590c", "o"),
-    "survey": ("Самооценка (опрос)", "#4dabf7", "D"),
-    "missed": ("Уклонился от ответа", "#868e96", "X"),
-}
 LEVEL_COLORS = ["#2f9e44", "#f0c419", "#f08c00", "#e03131", "#9c36b5"]
+TEXT, GRID, BACK, PANEL = "#dbdee1", "#4e5058", "#1e1f22", "#2b2d31"
 
 
 def period_by_name(name: str | None) -> Period:
@@ -44,55 +39,74 @@ def period_by_name(name: str | None) -> Period:
     return PERIODS.get(aliases.get(key, key), PERIODS[DEFAULT_PERIOD])
 
 
-def render_chart(reports: list[Report], period: Period, now: datetime) -> bytes:
-    """PNG: по горизонтали время (МСК), по вертикали степень; пустой период — подпись «нет репортов»."""
+def _level_color(value: float) -> str:
+    return LEVEL_COLORS[min(len(LEVELS), int(max(0.0, value) // INDEX_STEP) + 1) - 1]
+
+
+def render_chart(book, guild_id: int, period: Period, now: datetime) -> bytes:
     start = now - period.span
-    points = sorted((r for r in reports if r.created_at >= start), key=lambda r: r.created_at)
+    local = lambda moment: moment.astimezone(MSK)  # noqa: E731
 
-    fig, ax = plt.subplots(figsize=(9, 4), dpi=110)
+    days = [d for d in book.history(guild_id) if day_start(d.day) + timedelta(days=1) > start]
+    tests = [t for t in book.tests.all() if t.guild_id == guild_id and t.created_at >= start]
+    reports = [r for r in book.reports.all() if r.guild_id == guild_id and r.created_at >= start]
+
+    fig, ax = plt.subplots(figsize=(9, 4.6), dpi=110)
     try:
-        fig.patch.set_facecolor("#1e1f22")
-        ax.set_facecolor("#2b2d31")
+        fig.patch.set_facecolor(BACK)
+        ax.set_facecolor(PANEL)
         for spine in ax.spines.values():
-            spine.set_color("#4e5058")
-        ax.tick_params(colors="#dbdee1")
+            spine.set_color(GRID)
+        ax.tick_params(colors=TEXT)
 
-        # Полосы уровней на фоне — сразу видно, в какой зоне точка
-        for number, color in enumerate(LEVEL_COLORS, start=1):
-            ax.axhspan(number - 0.5, number + 0.5, color=color, alpha=0.08, linewidth=0)
+        # Полосы степеней на фоне: 0–19 лёгкое … 80–100 критическое
+        for number, color in enumerate(LEVEL_COLORS):
+            ax.axhspan(number * INDEX_STEP, (number + 1) * INDEX_STEP, color=color, alpha=0.08, linewidth=0)
 
-        for source, (label, color, marker) in SOURCES.items():
-            own = [r for r in points if getattr(r, "source", "report") == source]
-            if not own:
-                continue
-            times = [r.created_at.astimezone(MSK) for r in own]
-            levels = [r.level for r in own]
-            if source == "missed":      # пропуски — отдельным рядом снизу, без линии
-                ax.scatter(times, levels, color=color, marker=marker, s=60, zorder=3, label=label)
-                continue
-            ax.plot(times, levels, color=color, alpha=0.35, linewidth=1.5)
-            ax.scatter(times, levels, color=[LEVEL_COLORS[lv - 1] for lv in levels], edgecolors=color,
-                       marker=marker, s=60, zorder=3, label=label)
+        if days:
+            starts = [local(day_start(d.day)) for d in days]
+            ax.bar(starts, [d.daily for d in days], width=0.9, align="edge", alpha=0.3,
+                   color=[_level_color(d.daily) for d in days], label="Дневной индекс")
+            closed = [(local(day_start(d.day) + timedelta(days=1)), d.overall) for d in days if d.overall is not None]
+            if closed:
+                ax.plot([x for x, _ in closed], [y for _, y in closed], color="#f2f3f5", linewidth=2,
+                        marker="o", markersize=4, label="Общий индекс")
 
-        ticks = list(range(1, len(LEVELS) + 1))
-        labels = [level.label for level in LEVELS]
-        if any(r.level == MISSED_LEVEL for r in points):
-            ticks.insert(0, MISSED_LEVEL)
-            labels.insert(0, "Уклонился")
-        ax.set_ylim(ticks[0] - 0.5, len(LEVELS) + 0.5)
-        ax.set_yticks(ticks, labels)
-        ax.set_xlim(start.astimezone(MSK), now.astimezone(MSK))
+        done = [t for t in tests if t.completed]
+        if done:
+            ax.scatter([local(t.created_at) for t in done], [t.index for t in done], marker="D", s=55, zorder=4,
+                       color=[_level_color(t.index) for t in done], edgecolors="#4dabf7", label="Тест")
+        missed = [t for t in tests if not t.completed]
+        if missed:
+            ax.scatter([local(t.created_at) for t in missed], [3] * len(missed), marker="X", s=60, zorder=4,
+                       color="#868e96", label="Уклонился")
+        if reports:
+            # Репорт — точка в середине своей полосы
+            ax.scatter([local(r.created_at) for r in reports], [(r.level - 0.5) * INDEX_STEP for r in reports],
+                       marker="o", s=40, zorder=4, color=[LEVEL_COLORS[r.level - 1] for r in reports],
+                       edgecolors="#e8590c", label="Репорт")
+
+        ax.set_ylim(0, 100)
+        ax.set_yticks([(n + 0.5) * INDEX_STEP for n in range(len(LEVELS))], [lv.label for lv in LEVELS])
+        numbers = ax.twinx()                    # справа — сам индекс 0–100
+        numbers.set_ylim(0, 100)
+        numbers.set_yticks(range(0, 101, 20))
+        numbers.tick_params(colors="#949ba4", labelsize=8)
+        for spine in numbers.spines.values():
+            spine.set_visible(False)
+        ax.set_xlim(local(start), local(now))
         ax.xaxis.set_major_formatter(mdates.DateFormatter(period.date_format, tz=MSK))
-        ax.grid(axis="x", color="#4e5058", alpha=0.5, linewidth=0.6)
-        ax.set_title(f"Степень выделения Доркина за {period.title}", color="#f2f3f5", fontsize=12)
+        ax.grid(axis="x", color=GRID, alpha=0.5, linewidth=0.6)
+        ax.set_title(f"Индекс Доркина за {period.title}", color="#f2f3f5", fontsize=12)
 
-        if points:
-            legend = ax.legend(loc="upper left", facecolor="#1e1f22", edgecolor="#4e5058", fontsize=9)
+        if days or tests or reports:
+            legend = ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), facecolor=BACK, edgecolor=GRID,
+                               fontsize=8, ncol=5)
             for text in legend.get_texts():
-                text.set_color("#dbdee1")
+                text.set_color(TEXT)
         else:
-            ax.text(0.5, 0.5, "За этот период записей нет", transform=ax.transAxes, ha="center",
-                    va="center", color="#949ba4", fontsize=12)
+            ax.text(0.5, 0.5, "Данных пока нет: индекс начнётся с первого теста", transform=ax.transAxes,
+                    ha="center", va="center", color="#949ba4", fontsize=11)
 
         fig.tight_layout()
         out = io.BytesIO()

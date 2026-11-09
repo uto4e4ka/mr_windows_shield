@@ -1,14 +1,14 @@
 [plugin]
 name = "mr_windows_shield"
 label = "🛡️ Mr. Windows Shield"
-description = "Ловит Linux-активность в чате и принимает репорты о Доркине"
-version = "1.3.0"
+description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
+version = "1.4.0"
 author = "Uto4ka404"
 
 [runtime]
 entry = "mr_windows_shield.main:create_plugin"
 python = ">=3.14"
-potehinsonnet = ">=0.20,<1.0"
+potehinsonnet = ">=0.21,<1.0"
 
 [permissions]
 # Тревоги в канал; опрос в личку и погашенные кнопки опроса; /dorkin; страница в панели
@@ -18,5 +18,18 @@ panel = true
 
 [settings.linux_words]
 label = "Слова Linux-активности"
-description = "Через запятую, например: linux, ubuntu, arch"
+description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
 default = "linux"
+
+[settings.watch_airfryer]
+label = "Наблюдение: слова про аэрогриль"
+description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
+default = "аэрогрил, аэрофритюр, airfryer, air fryer"
+
+[settings.watch_warthunder]
+label = "Наблюдение: слова про War Thunder"
+default = "вартандер, вар тандер, war thunder, warthunder, тундр, wt, танк, ангар"
+
+[settings.watch_women]
+label = "Наблюдение: слова про женщин"
+default = "женщин, девушк, девочк, тян, тянк, тяночк, баба, бабы, бабу, бабе, бабам, телк"

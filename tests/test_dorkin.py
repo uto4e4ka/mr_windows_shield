@@ -11,6 +11,7 @@ from potehinsonnet.storage import DataDir
 
 from mr_windows_shield.chart import PERIODS, period_by_name, render_chart
 from mr_windows_shield.dorkin import REPORT_BUTTON, DorkinReports
+from mr_windows_shield.index import IndexBook
 from mr_windows_shield.models import LEVELS
 from mr_windows_shield.linux_watch import find_word, parse_words
 from mr_windows_shield.main import create_plugin
@@ -34,7 +35,7 @@ def clock():
 
 @pytest.fixture
 def reports(tmp_path, clock):
-    return DorkinReports(DataDir(tmp_path), AsyncMock(), now=clock)
+    return DorkinReports(IndexBook(DataDir(tmp_path), now=clock), AsyncMock(), now=clock)
 
 
 def cmd():
@@ -133,8 +134,8 @@ def test_period_by_name(name, key):
     assert period_by_name(name).key == key
 
 
-def test_chart_without_reports_renders(clock):
-    assert render_chart([], PERIODS["day"], clock()).startswith(b"\x89PNG")
+def test_chart_without_data_renders(reports, clock):
+    assert render_chart(reports.book, GUILD.id, PERIODS["day"], clock()).startswith(b"\x89PNG")
 
 
 async def test_panel_page_chart_and_period(tmp_path):
@@ -144,8 +145,10 @@ async def test_panel_page_chart_and_period(tmp_path):
     _, page = plugin.panel.pages["dorkin_reports"]
 
     blocks = (await page(panel)).blocks
-    assert blocks[0].fields[0].value == "week"
-    assert blocks[1].url.startswith("data:image/png;base64,")
+    assert blocks[0].items["Общий индекс"] == "нет данных"
+    assert blocks[1].fields[0].value == "week"
+    assert blocks[2].url.startswith("data:image/png;base64,")
+    assert [b.title for b in blocks[3:]] == ["📨 Тест в личку и наблюдение", "📅 По дням", "🧾 Репорты и тесты"]
 
     await plugin.panel.actions["chart_period"](panel, {"period": "day"})
-    assert (await page(panel)).blocks[0].fields[0].value == "day"
+    assert (await page(panel)).blocks[1].fields[0].value == "day"
