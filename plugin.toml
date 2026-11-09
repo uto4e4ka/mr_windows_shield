@@ -1,0 +1,22 @@
+[plugin]
+name = "mr_windows_shield"
+label = "🛡️ Mr. Windows Shield"
+description = "Ловит Linux-активность в чате и принимает репорты о Доркине"
+version = "1.1.0"
+author = "Uto4ka404"
+
+[runtime]
+entry = "mr_windows_shield.main:create_plugin"
+python = ">=3.14"
+potehinsonnet = ">=0.19,<1.0"
+
+[permissions]
+# Тревоги и предупреждения в канал; /dorkin report; страница репортов в панели
+discord = ["send_message"]
+commands = true
+panel = true
+
+[settings.linux_words]
+label = "Слова Linux-активности"
+description = "Через запятую, например: linux, ubuntu, arch"
+default = "linux"

@@ -1,17 +1,23 @@
 [project]
 name = "mr-windows-shield"
-version = "0.1.0"
-description = ""
+version = "1.1.0"
+description = "Ловит Linux-активность в чате и принимает репорты о Доркине"
 authors = [
     {name = "azhestkov"}
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "potehinsonnet @ file:///C:/Users/alezh/PycharmProjects/Discord_Bots/poteninson_net/dist/potehinsonnet-0.1.18-py3-none-any.whl",
-    "dotenv (>=0.9.9,<0.10.0)"
-
+    "potehinsonnet (>=0.19,<1.0)",
 ]
 
+[dependency-groups]
+dev = ["pytest (>=8)", "pytest-asyncio (>=1.0)"]
+
+[tool.poetry]
+packages = [{ include = "mr_windows_shield" }]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
