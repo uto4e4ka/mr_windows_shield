@@ -6,18 +6,21 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from potehinsonnet import Plugin, PluginContext
+from potehinsonnet.net_models.panel_ui import guest_path
 from potehinsonnet.net_models.panel_ui import (
     Button, ChannelPicker, Form, Image, KeyValue, Link, MemberPicker, NumberField, Option, PanelContext, PanelPage, Section,
     Select, Table, TableRow, Text, TextField, Toggle,
 )
 
+from mr_windows_shield import config
 from mr_windows_shield.activity import ACTIVITY_TITLES, DEFAULT_GAMES, ActivityTracker, describe
 from mr_windows_shield.chart import DEFAULT_PERIOD, PERIODS, render_chart
 from mr_windows_shield.dorkin import DorkinReports
 from mr_windows_shield.events import SOURCES, EventBook
+from mr_windows_shield.guest import GuestLinks
 from mr_windows_shield.index import IndexBook
 from mr_windows_shield.linux_watch import LinuxWatch, parse_words
-from mr_windows_shield.models import MSK, DayIndex, format_day, format_time, index_title, level_title
+from mr_windows_shield.models import MSK, QUESTIONS, DayIndex, format_day, format_time, index_title, level_title
 from mr_windows_shield.observe import TOPIC_TITLES, ChatObserver, build_topics
 from mr_windows_shield.summary import SUMMARY_HOUR, Summaries
 from mr_windows_shield.questions import QuestionBank
@@ -61,8 +64,14 @@ def withdrawal_text(day: DayIndex) -> str:
     return f"{day.withdrawal:g} (наигрался)" if day.withdrawal < 0 else "0"
 
 
+def answers_short(answers: dict[str, int]) -> str:
+    """🍗 4 · 👀 5 · ✈️ 2 · 🧩 3"""
+    return " · ".join(f"{q.emoji} {answers[q.key]}" for q in QUESTIONS if q.key in answers)
+
+
 def create_plugin(ctx: PluginContext) -> Plugin:
     plugin = Plugin.from_context(ctx)
+    guests = GuestLinks(ctx.data)
 
     book = IndexBook(ctx.data)
     reports = DorkinReports(book, plugin.discord)
@@ -106,8 +115,13 @@ def create_plugin(ctx: PluginContext) -> Plugin:
 
     chart_period: dict[int, str] = {}     # выбранный в панели период графика — по серверу
 
-    @plugin.panel_page("dorkin_reports", title="Индекс Доркина", icon="⚠️")
+    @plugin.panel_page("dorkin_reports", title="Индекс Доркина", icon="⚠️", guest=True)
     async def index_page(panel: PanelContext) -> PanelPage:
+        if panel.guest:
+            guild_id = guests.guild_for(panel.guest_token)
+            if guild_id is None:
+                raise ValueError("Ссылка недействительна")
+            return guest_page(guild_id, panel.params.get("period"))
         guild_id = panel.guild_id
         if not guild_id:
             return PanelPage(blocks=[Text("Индекс считается по каждому серверу — откройте страницу в разделе сервера")])
@@ -128,9 +142,51 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             Image(url="data:image/png;base64," + base64.b64encode(png).decode(), alt="График Индекса Доркина"),
             survey_section(guild_id),
             summary_section(guild_id),
+            guest_section(guild_id),
             days_section(guild_id),
             world_section(guild_id),
             events_section(guild_id),
+        ])
+
+    def guest_page(guild_id: int, period_key: str | None) -> PanelPage:
+        """Только просмотр: индекс, график (период — ссылками), что делает сейчас, дни, события, тесты."""
+        book.close_days(guild_id)
+        period = PERIODS.get(period_key or "", PERIODS[DEFAULT_PERIOD])
+        png = render_chart(book, guild_id, period, book.now(), events=events)
+        today = book.today(guild_id)
+        target = surveys.targets.get(guild_id)
+        items = {"Общий индекс": index_title(book.state(guild_id).overall),
+                 "Сегодня (дневной)": index_title(today.daily if today else None),
+                 "Из чего сегодня": breakdown(today) if today else "ждём первого теста"}
+        if target:
+            items = {"Наблюдаемый": target.user_name, **items, **activity_status(guild_id, guest=True)}
+        return PanelPage(blocks=[
+            KeyValue(items=items),
+            Text("График: " + " · ".join(
+                ("▶ " if p.key == period.key else "") + p.title for p in PERIODS.values()), style="muted"),
+            *[Link(url=f"?period={p.key}", label=f"📈 {p.title.capitalize()}") for p in PERIODS.values()
+              if p.key != period.key],
+            Image(url="data:image/png;base64," + base64.b64encode(png).decode(), alt="График Индекса Доркина"),
+            days_section(guild_id),
+            world_section(guild_id, guest=True),
+            events_section(guild_id),
+        ])
+
+    def guest_section(guild_id: int) -> Section:
+        token = guests.token(guild_id)
+        if token is None:
+            return Section(title="🔗 Гостевая ссылка", collapsed=True, blocks=[
+                Text("Страница для просмотра без входа в панель: индекс, график, активность, дни, события и тесты. "
+                     "Настройки и кнопки гостям не видны."),
+                Button(action="guest_issue", label="🔗 Создать гостевую ссылку", style="primary"),
+            ])
+        path = guest_path(config.PLUGIN_NAME, "dorkin_reports", token)
+        return Section(title="🔗 Гостевая ссылка", collapsed=True, blocks=[
+            Text("Кто откроет ссылку — увидит страницу без входа (только просмотр). Чтобы скопировать — "
+                 "откройте и скопируйте адрес из браузера."),
+            Link(url=path, label="🔗 Открыть гостевую страницу"),
+            Button(action="guest_issue", label="Перевыпустить", confirm="Старая ссылка перестанет работать. Перевыпустить?"),
+            Button(action="guest_revoke", label="Выключить", style="danger", confirm="Выключить гостевую ссылку?"),
         ])
 
     def summary_section(guild_id: int) -> Section:
@@ -143,7 +199,7 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             Button(action="summary_send_now", label="📊 Отправить сводку сейчас", disabled=channel is None),
         ])
 
-    def world_section(guild_id: int) -> Section:
+    def world_section(guild_id: int, guest: bool = False) -> Section:
         stats = events.analysis(guild_id, [d for d in book.history(guild_id) if d.overall is not None])
         listed = events.for_guild(guild_id)[:WORLD_EVENTS_SHOWN]
         errors = {f"Ошибка: {source_title(k)}": v for k, v in events.last_errors.items()}
@@ -155,17 +211,17 @@ def create_plugin(ctx: PluginContext) -> Plugin:
                       TableRow(cells=[s.category, str(s.days), f"{s.on_day:g}",
                                       f"{s.next_day:g}" if s.next_day is not None else "—",
                                       f"{s.other:g}", signed(round(s.on_day - s.other, 1))]) for s in stats]),
-            *([KeyValue(items=errors)] if errors else []),
-            Form(action="event_add", submit="Добавить событие", fields=[
+            *([KeyValue(items=errors)] if errors and not guest else []),
+            *([] if guest else [Form(action="event_add", submit="Добавить событие", fields=[
                 TextField(name="day", label="Дата", placeholder="ДД.ММ.ГГГГ", required=True),
                 TextField(name="title", label="Событие", placeholder="Новый аэрогриль у Доркина", required=True),
                 TextField(name="category", label="Категория", placeholder="Своё"),
             ]),
-            Button(action="events_refresh", label="🔄 Обновить источники"),
+            Button(action="events_refresh", label="🔄 Обновить источники")]),
             Table(columns=["Дата", "Источник", "Категория", "Событие"], empty="Событий пока нет", rows=[
                 TableRow(cells=[format_day(e.day), SOURCES.get(e.source, e.source), e.category, e.title[:160]],
                          actions=[Button(action="event_delete", label="×", confirm=f"Удалить «{e.title}»?",
-                                         values={"id": e.id})] if e.source == "manual" else [])
+                                         values={"id": e.id})] if e.source == "manual" and not guest else [])
                 for e in listed]),
         ])
 
@@ -212,10 +268,10 @@ def create_plugin(ctx: PluginContext) -> Plugin:
                    disabled=target is None or target.unsubscribed),
         ])
 
-    def activity_status(guild_id: int) -> dict[str, str]:
+    def activity_status(guild_id: int, guest: bool = False) -> dict[str, str]:
         live = tracker.live.get(guild_id)
         items = {}
-        if tracker.last_error:
+        if tracker.last_error and not guest:
             items["Активность"] = f"❌ бот не отвечает: {tracker.last_error} (нужна новая версия бота)"
         elif live is not None:
             now = []
@@ -226,9 +282,10 @@ def create_plugin(ctx: PluginContext) -> Plugin:
                     live.status or "", "⚫ не в сети"))
                 if live.activities:
                     now.append("играет: " + ", ".join(live.activities))
-            else:
+            elif not guest:
                 now.append("статусы не видны — включите интент Presence в Discord Developer Portal")
-            items["Сейчас"] = " · ".join(now)
+            if now:
+                items["Сейчас"] = " · ".join(now)
         today = tracker.record(guild_id, book.now().astimezone(MSK).date())
         items["Сегодня"] = describe(today) or "—"
         return items
@@ -271,7 +328,8 @@ def create_plugin(ctx: PluginContext) -> Plugin:
     def events_section(guild_id: int) -> Section:
         events = [(r.created_at, "Репорт", r.user_name, level_title(r.level)) for r in reports.for_guild(guild_id)]
         events += [(t.created_at, "Тест", t.user_name,
-                    index_title(t.index) if t.completed else "🙈 уклонился")
+                    (index_title(t.index) if t.completed else "🙈 уклонился")
+                    + (f" ({answers_short(t.answers)})" if t.answers else ""))
                    for t in book.tests.all() if t.guild_id == guild_id]
         events.sort(key=lambda e: e[0], reverse=True)
         return Section(title="🧾 Репорты и тесты", collapsed=True, blocks=[Table(
@@ -303,6 +361,19 @@ def create_plugin(ctx: PluginContext) -> Plugin:
         if panel.guild_id:
             surveys.unlink_telegram(panel.guild_id)
         return "Telegram отвязан"
+
+    @plugin.panel_action("guest_issue")
+    async def guest_issue(panel: PanelContext, values: dict) -> str:
+        if not panel.guild_id:
+            return "Настраивается в разделе сервера"
+        guests.issue(panel.guild_id)
+        return "Гостевая ссылка готова — раздел «🔗 Гостевая ссылка»"
+
+    @plugin.panel_action("guest_revoke")
+    async def guest_revoke(panel: PanelContext, values: dict) -> str:
+        if panel.guild_id:
+            guests.revoke(panel.guild_id)
+        return "Гостевая ссылка выключена"
 
     @plugin.panel_action("summary_channel")
     async def summary_channel(panel: PanelContext, values: dict) -> str:

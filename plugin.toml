@@ -2,13 +2,13 @@
 name = "mr_windows_shield"
 label = "🛡️ Mr. Windows Shield"
 description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
-version = "1.11.0"
+version = "1.12.0"
 author = "Uto4ka404"
 
 [runtime]
 entry = "mr_windows_shield.main:create_plugin"
 python = ">=3.14"
-potehinsonnet = ">=0.21,<1.0"
+potehinsonnet = ">=0.22,<1.0"
 
 [permissions]
 # Тревоги в канал; опрос в личку и погашенные кнопки опроса; /dorkin; страница в панели

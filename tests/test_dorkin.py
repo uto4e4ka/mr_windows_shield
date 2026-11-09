@@ -148,8 +148,43 @@ async def test_panel_page_chart_and_period(tmp_path):
     assert blocks[0].items["Общий индекс"] == "нет данных"
     assert blocks[1].fields[0].value == "week"
     assert blocks[2].url.startswith("data:image/png;base64,")
-    assert [b.title for b in blocks[3:]] == ["📨 Тест в личку и наблюдение", "📊 Утренняя сводка", "📅 По дням",
-                                            "🗓 События и анализ", "🧾 Репорты и тесты"]
+    assert [b.title for b in blocks[3:]] == ["📨 Тест в личку и наблюдение", "📊 Утренняя сводка", "🔗 Гостевая ссылка",
+                                            "📅 По дням", "🗓 События и анализ", "🧾 Репорты и тесты"]
 
     await plugin.panel.actions["chart_period"](panel, {"period": "day"})
     assert (await page(panel)).blocks[1].fields[0].value == "day"
+
+
+async def test_guest_link_page(tmp_path):
+    from potehinsonnet.net_models.panel_ui import PanelActor, PanelContext
+    plugin = create_plugin(PluginContext(root=ROOT, manifest=load_manifest(ROOT), data_dir=tmp_path))
+    admin = PanelContext(guild_id=1, user=PanelActor.model_construct(id=1, name="admin"))
+    info, page = plugin.panel.pages["dorkin_reports"]
+    assert info.guest
+
+    def guest(token, **params):
+        return PanelContext(user=PanelActor(id=0, name="Гость"), guest_token=token, params=params)
+
+    with pytest.raises(ValueError, match="недействительна"):
+        await page(guest("x" * 24))
+
+    await plugin.panel.actions["guest_issue"](admin, {})
+    section = next(b for b in (await page(admin)).blocks if getattr(b, "title", "") == "🔗 Гостевая ссылка")
+    link = next(b for b in section.blocks if b.type == "link")
+    token = link.url.rsplit("/", 1)[1]
+    assert link.url == f"/guest/mr_windows_shield/dorkin_reports/{token}" and len(token) >= 16
+
+    blocks = (await page(guest(token, period="month"))).blocks
+    dumped = str([b.model_dump() for b in blocks])
+    assert "form" not in {b.type for b in blocks} and "button" not in dumped
+    assert any(b.type == "link" and b.url == "?period=week" for b in blocks)
+    assert "▶ месяц" in dumped.lower()
+    assert [b.title for b in blocks if b.type == "section"] == ["📅 По дням", "🗓 События и анализ", "🧾 Репорты и тесты"]
+
+    await plugin.panel.actions["guest_issue"](admin, {})            # перевыпуск — старая не работает
+    with pytest.raises(ValueError):
+        await page(guest(token))
+    await plugin.panel.actions["guest_revoke"](admin, {})
+    assert plugin.panel.pages["dorkin_reports"] and not any(
+        b.type == "link" for b in next(b for b in (await page(admin)).blocks
+                                       if getattr(b, "title", "") == "🔗 Гостевая ссылка").blocks)
