@@ -7,7 +7,7 @@ from datetime import datetime
 
 from potehinsonnet import Plugin, PluginContext
 from potehinsonnet.net_models.panel_ui import (
-    Button, ChannelPicker, Form, Image, KeyValue, MemberPicker, NumberField, Option, PanelContext, PanelPage, Section,
+    Button, ChannelPicker, Form, Image, KeyValue, Link, MemberPicker, NumberField, Option, PanelContext, PanelPage, Section,
     Select, Table, TableRow, Text, TextField, Toggle,
 )
 
@@ -19,7 +19,8 @@ from mr_windows_shield.linux_watch import LinuxWatch, parse_words
 from mr_windows_shield.models import DayIndex, format_day, format_time, index_title, level_title
 from mr_windows_shield.observe import TOPIC_TITLES, ChatObserver, build_topics
 from mr_windows_shield.summary import SUMMARY_HOUR, Summaries
-from mr_windows_shield.survey import DEFAULT_INTERVAL_HOURS, Surveys
+from mr_windows_shield.survey import DEFAULT_INTERVAL_HOURS, DELIVERY, Surveys
+from mr_windows_shield.telegram import TelegramBot
 
 DEFAULT_LINUX_WORDS = "linux"
 DAYS_SHOWN = 30
@@ -51,7 +52,10 @@ def create_plugin(ctx: PluginContext) -> Plugin:
 
     book = IndexBook(ctx.data)
     reports = DorkinReports(book, plugin.discord)
-    surveys = Surveys(ctx.data, plugin.discord, book)
+    telegram = TelegramBot.from_settings(ctx.settings)
+    surveys = Surveys(ctx.data, plugin.discord, book, telegram=telegram)
+    if telegram:
+        plugin.add_lifespan(telegram.running())
     events = EventBook(ctx.data, ctx.settings)
     reports.events = events
     summaries = Summaries(ctx.data, plugin.discord, book, events)
@@ -163,19 +167,40 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             status["Последний тест"] = format_time(target.last_sent_at)
         if target and target.last_error:
             status["Ошибка"] = target.last_error
+        telegram_blocks = telegram_status(target)
         return Section(title="📨 Тест в личку и наблюдение", collapsed=target is not None, blocks=[
-            Text("Выбранного человека бот раз в N часов просит пройти тест в личке (ночью 00:00–09:00 МСК не пишет) "
+            Text("Выбранного человека бот раз в N часов просит пройти тест (в личке Discord и/или в Telegram) (ночью 00:00–09:00 МСК не пишет) "
                  "и следит за его сообщениями на сервере. Слова для наблюдения — в настройках плагина."),
             KeyValue(items=status),
             Form(action="survey_setup", submit="Сохранить", fields=[
                 MemberPicker(name="user_id", label="За кем наблюдать", value=target.user_id if target else None),
                 NumberField(name="interval_hours", label="Тест раз в сколько часов", min=1, step=1,
                             value=target.interval_hours if target else DEFAULT_INTERVAL_HOURS),
+                Select(name="delivery", label="Куда отправлять тест", value=target.delivery if target else "discord",
+                       options=[Option(value=k, label=v) for k, v in DELIVERY.items()]),
                 Toggle(name="enabled", label="Тест включён", value=target.enabled if target else True),
             ]),
+            *telegram_blocks,
             Button(action="survey_send_now", label="📨 Отправить тест сейчас", style="primary",
                    disabled=target is None or target.unsubscribed),
         ])
+
+    def telegram_status(target) -> list:
+        """Привязка Telegram: ссылка для Start, кто привязан, ошибки связи."""
+        if target is None or target.delivery == "discord":
+            return []
+        if telegram is None:
+            return [Text("✈️ Telegram: укажите токен бота (от @BotFather) в настройках плагина и перезапустите плагин")]
+        items = {}
+        if telegram.last_error:
+            items["Связь с Telegram"] = f"❌ {telegram.last_error}"
+        if target.tg_chat_id:
+            items["Telegram"] = f"✅ привязан {target.tg_name}"
+            return [KeyValue(items=items), Button(action="telegram_unlink", label="Отвязать Telegram",
+                                                  confirm="Отвязать Telegram? Нужно будет снова нажать Start по ссылке")]
+        link = telegram.link(target.tg_code)
+        items["Telegram"] = "не привязан — отправьте ему ссылку, пусть нажмёт Start" if link else "⏳ подключаюсь к боту…"
+        return [KeyValue(items=items), *([Link(url=link, label=f"✈️ {link}")] if link else [])]
 
     def days_section(guild_id: int) -> Section:
         days = list(reversed(book.history(guild_id)))[:DAYS_SHOWN]
@@ -209,7 +234,8 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             return "Настраивается в разделе сервера"
         user_id = values.get("user_id")
         target = surveys.configure(panel.guild_id, int(user_id) if user_id else None,
-                                   values.get("interval_hours") or DEFAULT_INTERVAL_HOURS, bool(values.get("enabled")))
+                                   values.get("interval_hours") or DEFAULT_INTERVAL_HOURS, bool(values.get("enabled")),
+                                   delivery=values.get("delivery"))
         if target is None:
             return "Никто не выбран: тест и наблюдение выключены"
         if target.unsubscribed:
@@ -221,6 +247,12 @@ def create_plugin(ctx: PluginContext) -> Plugin:
         if not panel.guild_id:
             return "Настраивается в разделе сервера"
         return await surveys.send_now(panel.guild_id)
+
+    @plugin.panel_action("telegram_unlink")
+    async def telegram_unlink(panel: PanelContext, values: dict) -> str:
+        if panel.guild_id:
+            surveys.unlink_telegram(panel.guild_id)
+        return "Telegram отвязан"
 
     @plugin.panel_action("summary_channel")
     async def summary_channel(panel: PanelContext, values: dict) -> str:

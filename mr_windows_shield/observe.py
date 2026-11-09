@@ -97,9 +97,10 @@ class ChatObserver:
             return
         self._reminders = {survey.id: (0, now)}         # старые тесты больше не нужны
         left = max(1, int((survey.sent_at + ANSWER_TIME - now).total_seconds() // 60))
+        where = " и ".join(w for w, ok in (("в личке", survey.message_id), ("в Telegram", survey.tg_message_id)) if ok)
         await self.discord.send_message(NatsMessage(
             service=config.PLUGIN_NAME, channel_id=msg.channel_id,
-            text=f"📨 %user%, у вас непройденный тест в личке. Осталось {left} мин.",
+            text=f"📨 %user%, у вас непройденный тест {where}. Осталось {left} мин.",
             placeholders={"user": Placeholder(type=PlaceholderType.MENTION, value=msg.user.id)},
         ))
 

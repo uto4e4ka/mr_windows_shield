@@ -173,7 +173,7 @@ async def test_send_now_ignores_schedule_and_night(surveys, discord, clock):
     await surveys.tick()
     await answer_all(surveys, [1, 1, 1, 1])
     clock.value = datetime(2026, 11, 9, 22, 0, tzinfo=timezone.utc)          # ночь, интервал не прошёл
-    assert await surveys.send_now(GUILD) == "Тест отправлен в личку"
+    assert await surveys.send_now(GUILD) == "Тест отправлен: Discord"
     assert discord.send_direct_message.await_count == 2
 
 
@@ -208,5 +208,5 @@ async def test_changing_person_cancels_previous_test(surveys, discord, book):
 async def test_send_now_after_changing_person(surveys, discord):
     await surveys.tick()
     surveys.configure(GUILD, 555, 6, True)
-    assert await surveys.send_now(GUILD) == "Тест отправлен в личку"
+    assert await surveys.send_now(GUILD) == "Тест отправлен: Discord"
     assert discord.send_direct_message.await_args.args[0] == 555

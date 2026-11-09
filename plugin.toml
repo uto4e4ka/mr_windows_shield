@@ -2,7 +2,7 @@
 name = "mr_windows_shield"
 label = "🛡️ Mr. Windows Shield"
 description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
-version = "1.6.2"
+version = "1.7.0"
 author = "Uto4ka404"
 
 [runtime]
@@ -58,3 +58,14 @@ default = true
 label = "Ленты новостей мира (RSS)"
 description = "Адреса RSS через запятую; с каждой ленты — до 5 новостей в день"
 default = "https://rssexport.rbc.ru/rbcnews/news/30/full.rss, https://lenta.ru/rss/news/world, https://ria.ru/export/rss2/world/index.xml, https://tass.ru/rss/v2.xml, https://www.interfax.ru/rss.asp"
+
+[settings.telegram_token]
+label = "Telegram: токен бота"
+description = "Токен от @BotFather — чтобы тест приходил и в Telegram. После изменения перезапустите плагин"
+secret = true
+default = ""
+
+[settings.telegram_proxy]
+label = "Telegram: прокси"
+description = "Если api.telegram.org недоступен с сервера, например http://127.0.0.1:10809 (только http/https). Пусто — напрямую"
+default = ""
