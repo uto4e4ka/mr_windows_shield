@@ -22,6 +22,7 @@ SUMMARY_HOUR = 10               # МСК
 SUMMARY_CHART = "dorkin_summary.png"
 WORLD_SHOWN, WORLD_LENGTH = 2, 140
 NEWS_SHOWN = 3
+WT_SHOWN = 3                   # новостей War Thunder в сводке
 
 logger = logging.getLogger(__name__)
 
@@ -89,16 +90,15 @@ class Summaries:
                 f"{q.emoji} {sum(t.answers.get(q.key, 0) for t in done) / len(done):.1f}" for q in QUESTIONS)
             lines.append(f"Ответы (среднее): {averages}")
 
+        # Связанные события одним списком: свои и праздники, War Thunder, новости мира, Википедия
         day_events = self.events.for_day(guild_id, day)
-        ours = [e for e in day_events if e.source not in ("wiki", "news")][:3]
-        if ours:
-            lines.append("📅 События дня: " + "; ".join(f"{SOURCES[e.source].split()[0]} {e.title}" for e in ours))
-        news = [e for e in day_events if e.source == "news"][:NEWS_SHOWN]
-        if news:
-            lines.append("📰 В мире:")
-            lines += [f"• {short(e.title)}" for e in news]
-        for event in [e for e in day_events if e.source == "wiki"][:WORLD_SHOWN]:
-            lines.append(f"🌍 {short(event.title)}")
+        related = [e for e in day_events if e.source in ("manual", "holiday")]
+        related += [e for e in day_events if e.source == "warthunder"][:WT_SHOWN]
+        related += [e for e in day_events if e.source == "news"][:NEWS_SHOWN]
+        related += [e for e in day_events if e.source == "wiki"][:WORLD_SHOWN]
+        if related:
+            lines.append("🔗 **Связанные события:**")
+            lines += [f"{SOURCES[e.source].split()[0]} {short(e.title)}" for e in related]
         return "\n".join(lines)
 
     async def send(self, guild_id: int, day: date | None = None) -> str:

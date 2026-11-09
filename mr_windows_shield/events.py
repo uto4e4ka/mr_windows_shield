@@ -251,9 +251,15 @@ class EventBook:
                     self.last_errors[source] = f"{type(e).__name__}: {e}"
                     logger.warning(f"События {source} не загружены: {e}")
         known = {e.id for e in self.events.all()}
-        fresh = [e for e in found if e.id not in known]
+        fresh = list({e.id: e for e in found if e.id not in known}.values())
         if fresh:
             self.events.put_many(fresh)
+        counts: dict[str, int] = {}
+        for event in fresh:
+            counts[event.source] = counts.get(event.source, 0) + 1
+        summary = ", ".join(f"{SOURCES.get(k, k)}: {v}" for k, v in counts.items()) or "новых нет"
+        failed = f"; не загрузились: {', '.join(self.last_errors)}" if self.last_errors else ""
+        logger.info(f"События обновлены — {summary}{failed}")
 
     def analysis(self, guild_id: int, days) -> list[CategoryStat]:
         """По категориям: дневной индекс в день события и на следующий против остальных дней."""

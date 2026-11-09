@@ -158,7 +158,8 @@ async def test_summary_text_and_send(tmp_path, book):
     assert "Дневной: **71 · 🔴 Обильное** (▲ +12)" in text
     assert "Общий: **54 · 🟠 Сильное** (▲ +4.2)" in text
     assert "1 пройдено, 0 уклонился · Репорты: 0 · Наблюдение: 35 очк. (🍗 аэрогриль 12, ✈️ War Thunder 6)" in text
-    assert "🍗 5.0" in text and "Вышло обновление WT" in text and "🌍 Что-то в мире" in text and "…" in text
+    assert "🍗 5.0" in text and "🔗 **Связанные события:**\n✍️ Вышло обновление WT\n🌍 Что-то в мире" in text
+    assert "…" in text
 
     assert "канал" in await summaries.send(GUILD)
     summaries.set_channel(GUILD, 555)
@@ -270,5 +271,22 @@ async def test_summary_lists_world_news(tmp_path, book):
     for i in range(4):
         events.events.put(Event(id=f"n{i}", day=d19, title=f"Заголовок {i}", category="Новости мира", source="news"))
     text = Summaries(DataDir(tmp_path), AsyncMock(), book, events, now=book.now).text(GUILD, d19)
-    assert "📰 В мире:\n• Заголовок 0\n• Заголовок 1\n• Заголовок 2" in text and "Заголовок 3" not in text
-    assert "📅 События дня" not in text                       # новости — не «события дня»
+    assert "🔗 **Связанные события:**\n📰 Заголовок 0\n📰 Заголовок 1\n📰 Заголовок 2" in text
+    assert "Заголовок 3" not in text
+
+
+async def test_refresh_is_logged(tmp_path, caplog):
+    import logging
+
+    async def wt(client, today):
+        return [Event(id="wt:1", day=today, title="Патч", category="War Thunder: update", source="warthunder")]
+
+    async def down(client, today):
+        raise RuntimeError("таймаут")
+
+    events = EventBook(DataDir(tmp_path), {"events_holiday": False},
+                       now=Clock(datetime(2026, 11, 9, 12, tzinfo=timezone.utc)),
+                       fetchers={"warthunder": wt, "news a.ru": down})
+    with caplog.at_level(logging.INFO, logger="mr_windows_shield.events"):
+        await events.refresh()
+    assert "События обновлены — ✈️ War Thunder: 1; не загрузились: news a.ru" in caplog.text
