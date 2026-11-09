@@ -1,4 +1,5 @@
 """Тест в личку: раз в N часов бот задаёт Доркину 4 вопроса, из ответов — Индекс Доркина (models.dorkin_index).
+Вопросы случайные из банка на 100 (questions.py): по одному на тему, без повторов по кругу.
 
 Вопросы идут по очереди в одном сообщении. Не прошёл до конца за час — «уклонился» (+5 к дневному индексу).
 Куда слать — Discord-личка, Telegram или оба (выбор в панели); ответить можно в любом месте,
@@ -25,7 +26,8 @@ from potehinsonnet.storage import DataDir
 
 from mr_windows_shield import config
 from mr_windows_shield.index import IndexBook
-from mr_windows_shield.models import MSK, QUESTIONS, TestResult, dorkin_index, index_title
+from mr_windows_shield.models import MSK, TestResult, dorkin_index, index_title
+from mr_windows_shield.questions import ORIGINAL_IDS, QUESTION_BY_ID, mark_used, pick_questions
 from mr_windows_shield.telegram import TelegramBot, TelegramError, TgButton, TgUpdate
 
 ANSWER_TIME = timedelta(hours=1)
@@ -57,6 +59,7 @@ class SurveyTarget(BaseModel):
     tg_chat_id: int | None = None        # привязанный Telegram (после Start по ссылке)
     tg_name: str = ""
     tg_code: str = Field(default_factory=lambda: secrets.token_urlsafe(9))
+    used_questions: list[str] = Field(default_factory=list)    # заданные в этом круге (questions.py)
 
     @property
     def platforms(self) -> list[str]:
@@ -74,6 +77,7 @@ class PendingSurvey(BaseModel):
     tg_message_id: int | None = None
     sent_at: datetime
     answers: dict[str, int] = Field(default_factory=dict)
+    questions: list[str] = Field(default_factory=lambda: list(ORIGINAL_IDS))    # id вопросов по порядку
 
     @property
     def step(self) -> int:
@@ -98,9 +102,10 @@ def _telegram(screen: Screen) -> tuple[str, list[list[TgButton]]]:
                   for row in rows]
 
 
-def _answers_text(answers: dict[str, int]) -> str:
+def _answers_text(answers: dict[str, int], questions: list[str]) -> str:
+    asked = [QUESTION_BY_ID[qid] for qid in questions if qid in QUESTION_BY_ID]
     return "\n".join(f"{q.emoji} {q.text}: **{q.answers[answers[q.key] - 1]}** ({answers[q.key]}/5)"
-                     for q in QUESTIONS if q.key in answers)
+                     for q in asked if q.key in answers)
 
 
 class Surveys:
@@ -112,6 +117,7 @@ class Surveys:
         self.book = book
         self.now = now
         self.telegram = telegram
+        self.pick = pick_questions
         if telegram:
             telegram.handlers.append(self.on_telegram)
 
@@ -191,15 +197,16 @@ class Surveys:
                 continue
             self.pending.delete(survey.id)
             self._save(survey, target.user_name if target else "Доркин", completed=False)
-            done = f"\n\nУспел ответить:\n{_answers_text(survey.answers)}" if survey.answers else ""
+            done = f"\n\nУспел ответить:\n{_answers_text(survey.answers, survey.questions)}" if survey.answers else ""
             await self._show(survey, (f"⌛ Время на тест вышло — записано как «уклонился от ответа».{done}", []))
 
     async def _send(self, target: SurveyTarget) -> None:
         survey_id = uuid.uuid4().hex
         sent_at = self.now()
         target.last_sent_at = sent_at
-        survey = PendingSurvey(id=survey_id, guild_id=target.guild_id, user_id=target.user_id, sent_at=sent_at)
-        screen = self._question(survey_id, {})
+        survey = PendingSurvey(id=survey_id, guild_id=target.guild_id, user_id=target.user_id, sent_at=sent_at,
+                               questions=self.pick(target.used_questions))
+        screen = self._question(survey)
         errors = []
         if "discord" in target.platforms:
             try:
@@ -225,15 +232,17 @@ class Surveys:
         if errors:
             logger.warning(f"Тест [guild={target.guild_id}, user={target.user_id}]: {target.last_error}")
         if survey.message_id or survey.tg_message_id:
+            target.used_questions = mark_used(target.used_questions, survey.questions)
+            self.targets.put(target)
             self.pending.put(survey)
 
     @staticmethod
-    def _question(survey_id: str, answers: dict[str, int]) -> Screen:
-        step = len(answers)
-        question = QUESTIONS[step]
-        done = f"\n\n{_answers_text(answers)}" if answers else ""
+    def _question(survey: PendingSurvey) -> Screen:
+        survey_id, answers, step = survey.id, survey.answers, survey.step
+        question = QUESTION_BY_ID[survey.questions[step]]
+        done = f"\n\n{_answers_text(answers, survey.questions)}" if answers else ""
         return (
-            f"{config.PLUGIN_TITLE} · **Плановый тест** · вопрос {step + 1}/{len(QUESTIONS)}\n"
+            f"{config.PLUGIN_TITLE} · **Плановый тест** · вопрос {step + 1}/{len(survey.questions)}\n"
             f"{question.emoji} **{question.text}**\n"
             f"-# На весь тест — {int(ANSWER_TIME.total_seconds() // 3600)} ч., потом засчитается «уклонился».{done}",
             [
@@ -263,6 +272,7 @@ class Surveys:
         return self.book.tests.put(TestResult(
             id=uuid.uuid4().hex, guild_id=survey.guild_id, user_id=survey.user_id, user_name=user_name,
             answers=dict(survey.answers), index=dorkin_index(survey.answers) if completed else None,
+            questions=list(survey.questions),
             completed=completed, created_at=self.now(),
         ))
 
@@ -284,17 +294,17 @@ class Surveys:
         parts = data.split(ID_SEPARATOR)
         try:
             step, value = int(parts[2]), int(parts[3])
-            if not (0 <= step < len(QUESTIONS) and 1 <= value <= 5):
+            if not (0 <= step < len(survey.questions) and 1 <= value <= 5):
                 raise ValueError
         except (IndexError, ValueError):
             return "Непонятный ответ", []
         if step != survey.step:
             return None                     # двойное нажатие по старому вопросу — сообщение уже другое
 
-        survey.answers[QUESTIONS[step].key] = value
-        if survey.step < len(QUESTIONS):
+        survey.answers[QUESTION_BY_ID[survey.questions[step]].key] = value
+        if survey.step < len(survey.questions):
             self.pending.put(survey)
-            screen = self._question(survey.id, survey.answers)
+            screen = self._question(survey)
         else:
             self.pending.delete(survey.id)
             target = self.targets.get(survey.guild_id)
@@ -303,7 +313,7 @@ class Surveys:
                 self.targets.put(target)
             result = self._save(survey, target.user_name if target else name, completed=True)
             screen = (f"✅ **Тест пройден** ({PLATFORM[platform]}). Индекс Доркина: **{index_title(result.index)}**"
-                      f"\n\n{_answers_text(result.answers)}", [])
+                      f"\n\n{_answers_text(result.answers, result.questions)}", [])
         await self._show(survey, screen, skip=platform)
         return screen
 

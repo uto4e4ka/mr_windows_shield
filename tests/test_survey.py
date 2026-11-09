@@ -8,6 +8,7 @@ from potehinsonnet.storage import DataDir
 
 from mr_windows_shield.index import IndexBook
 from mr_windows_shield.models import QUESTIONS
+from mr_windows_shield.questions import ORIGINAL_IDS
 from mr_windows_shield.survey import ANSWER_BUTTON, UNSUBSCRIBE_BUTTON, Surveys
 
 GUILD, DORKIN = 1, 77
@@ -41,6 +42,7 @@ def book(tmp_path, clock):
 @pytest.fixture
 def surveys(tmp_path, discord, book, clock):
     s = Surveys(DataDir(tmp_path), discord, book, now=clock)
+    s.pick = lambda used: list(ORIGINAL_IDS)          # здесь — исходные 4 вопроса; банк — в test_questions
     s.configure(GUILD, DORKIN, 6, True)
     return s
 

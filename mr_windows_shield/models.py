@@ -51,6 +51,7 @@ class Question:
     text: str
     emoji: str
     answers: tuple[str, str, str, str, str]     # подписи кнопок 1…5
+    id: str = ""                                # в банке вопросов (questions.py): «airfryer07»
 
 
 QUESTIONS: list[Question] = [
@@ -119,6 +120,7 @@ class TestResult(BaseModel):
     user_name: str
     answers: dict[str, int] = Field(default_factory=dict)
     index: float | None = None  # только у пройденного
+    questions: list[str] = Field(default_factory=list)     # id заданных вопросов (questions.py)
     completed: bool
     created_at: datetime
 
