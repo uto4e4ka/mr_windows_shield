@@ -1,4 +1,5 @@
 import random
+from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
@@ -15,8 +16,8 @@ BANK = QuestionBank.builtin()
 
 
 def test_builtin_file_has_100_unique_questions():
-    assert BANK.count() == {t: 25 for t in TOPICS}
-    assert len(BANK.by_id) == 100
+    assert BANK.count() == {t: 250 for t in TOPICS}
+    assert len(BANK.by_id) == 1000
     assert [BANK.by_id[i].text for i in BANK.first_ids()][0] == "Оцените ваше желание воспользоваться аэрогрилем"
 
 
@@ -52,17 +53,17 @@ def test_load_copies_builtin_then_reads_edits(tmp_path):
 def test_broken_file_falls_back_to_builtin(tmp_path):
     (tmp_path / "questions.toml").write_text("[airfryer\n", encoding="utf-8")
     bank = QuestionBank.load(tmp_path)
-    assert bank.error and bank.source == "встроенные" and len(bank.by_id) == 100
+    assert bank.error and bank.source == "встроенные" and len(bank.by_id) == 1000
 
 
 def test_one_per_topic_and_no_repeats_until_exhausted():
     rng, used, seen = random.Random(2), [], []
-    for _ in range(25):
+    for _ in range(250):
         chosen = BANK.pick(used, rng)
         assert [BANK.by_id[q].key for q in chosen] == TOPICS
         used = BANK.mark_used(used, chosen)
         seen += chosen
-    assert len(set(seen)) == 100
+    assert len(set(seen)) == 1000
     chosen = BANK.pick(used, rng)
     assert BANK.mark_used(used, chosen) == chosen                      # новый круг
 
@@ -79,7 +80,7 @@ async def test_random_questions_in_test_and_result(tmp_path):
     book = IndexBook(DataDir(tmp_path), now=clock)
     surveys = Surveys(DataDir(tmp_path), discord, book, now=clock, bank=BANK)
     chosen = [BANK.bank["airfryer"][5].id, question_id("women", "Оцените вашу тягу к женщинам по шкале от монаха до пса"),
-              BANK.bank["warthunder"][3].id, BANK.bank["autism"][-1].id]
+              BANK.bank["warthunder"][3].id, BANK.bank["autism"][24].id]
     surveys.pick = lambda used: chosen
     surveys.configure(1, 77, 6, True)
     await surveys.tick()
@@ -96,3 +97,14 @@ async def test_random_questions_in_test_and_result(tmp_path):
     [result] = book.tests.all()
     assert result.index == 100 and result.questions == chosen
     assert surveys.targets.get(1).used_questions == chosen
+
+
+def test_unedited_old_builtin_is_replaced_edited_is_kept(tmp_path):
+    old = Path(__file__).parent / "fixtures" / "questions_1_10.toml"
+    (tmp_path / "questions.toml").write_bytes(old.read_bytes())
+    assert len(QuestionBank.load(tmp_path).by_id) == 1000                 # не правили — обновили
+
+    edited = old.read_text(encoding="utf-8").replace("Оцените вашу зависимость от аэрогриля", "Свой вопрос")
+    (tmp_path / "questions.toml").write_text(edited, encoding="utf-8")
+    bank = QuestionBank.load(tmp_path)
+    assert len(bank.by_id) == 100 and "Свой вопрос" in {q.text for q in bank.by_id.values()}

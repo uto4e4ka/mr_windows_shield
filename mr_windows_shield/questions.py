@@ -22,7 +22,16 @@ DATA_FILE = "questions.toml"
 TOPICS = [q.key for q in QUESTIONS]          # airfryer, women, warthunder, autism
 ORIGINAL = {q.key: q for q in QUESTIONS}
 
+# Хеши прошлых встроенных файлов: data/questions.toml с таким содержимым никто не правил — его можно обновить
+OLD_BUILTIN_HASHES = {
+    "1cac7004ecd48bf494f5d7421a6a5be1e84e3914661df2f6de6fa4df30c8ae72",    # 1.10: 100 вопросов
+}
+
 logger = logging.getLogger(__name__)
+
+
+def file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def question_id(topic: str, text: str) -> str:
@@ -84,7 +93,8 @@ class QuestionBank:
         """data/questions.toml (создаётся из встроенного, если его нет); ошибка — встроенные + текст ошибки."""
         path = Path(data_dir) / DATA_FILE
         try:
-            if not path.exists():
+            if not path.exists() or file_hash(path) in OLD_BUILTIN_HASHES:
+                # нет файла или там прошлые встроенные вопросы без правок — кладём новые встроенные
                 shutil.copyfile(BUILTIN_FILE, path)
             return cls(parse_bank(path.read_text(encoding="utf-8")), source=f"data/{DATA_FILE}")
         except (OSError, ValueError, tomllib.TOMLDecodeError) as e:

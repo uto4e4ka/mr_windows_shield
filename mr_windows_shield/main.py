@@ -68,6 +68,7 @@ def create_plugin(ctx: PluginContext) -> Plugin:
     reports = DorkinReports(book, plugin.discord)
     telegram = TelegramBot.from_settings(ctx.settings)
     questions = QuestionBank.load(ctx.data_dir)
+    builtin_total = len(QuestionBank.builtin().by_id)
     surveys = Surveys(ctx.data, plugin.discord, book, telegram=telegram, bank=questions)
     if telegram:
         plugin.add_lifespan(telegram.running())
@@ -186,6 +187,9 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             status["Ошибка"] = target.last_error
         counts = questions.count()
         status["Вопросы"] = f"{sum(counts.values())} ({' / '.join(map(str, counts.values()))} по темам) — {questions.source}"
+        if not questions.error and len(questions.by_id) != builtin_total:
+            status["Вопросы"] += (f" · встроенных в плагине {builtin_total} — файл правили, поэтому он не обновлён "
+                                  f"(удалите data/questions.toml, чтобы взять встроенные)")
         if questions.error:
             status["Ошибка в questions.toml"] = f"❌ {questions.error} — пока заданы встроенные вопросы"
         if target:
