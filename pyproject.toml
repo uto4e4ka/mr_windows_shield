@@ -1,6 +1,6 @@
 [project]
 name = "mr-windows-shield"
-version = "1.12.0"
+version = "1.13.0"
 description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
 authors = [
     {name = "azhestkov"}

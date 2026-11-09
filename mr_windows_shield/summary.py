@@ -12,7 +12,7 @@ from potehinsonnet.net_models.discord_models import (
 from mr_windows_shield import config
 from mr_windows_shield.activity import describe
 from mr_windows_shield.chart import PERIODS, render_chart
-from mr_windows_shield.events import SOURCES, EventBook
+from mr_windows_shield.events import EventBook, event_line, related_events
 from mr_windows_shield.index import IndexBook, day_id
 from mr_windows_shield.models import (
     MSK, QUESTIONS, day_start, format_day, index_title, msk_day,
@@ -21,9 +21,6 @@ from mr_windows_shield.observe import TOPIC_TITLES
 
 SUMMARY_HOUR = 10               # МСК
 SUMMARY_CHART = "dorkin_summary.png"
-WORLD_SHOWN, WORLD_LENGTH = 2, 140
-NEWS_SHOWN = 3
-WT_SHOWN = 3                   # новостей War Thunder в сводке
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +29,6 @@ class SummaryConfig(BaseModel):
     guild_id: int
     channel_id: int | None = None
     last_sent_day: date | None = None   # день (МСК), когда сводка уже ушла
-
-
-def short(title: str) -> str:
-    return title if len(title) <= WORLD_LENGTH else title[:WORLD_LENGTH - 1] + "…"
 
 
 def delta(now: float | None, before: float | None) -> str:
@@ -99,15 +92,10 @@ class Summaries:
                 f"{q.emoji} {sum(t.answers.get(q.key, 0) for t in done) / len(done):.1f}" for q in QUESTIONS)
             lines.append(f"Ответы (среднее): {averages}")
 
-        # Связанные события одним списком: свои и праздники, War Thunder, новости мира, Википедия
-        day_events = self.events.for_day(guild_id, day)
-        related = [e for e in day_events if e.source in ("manual", "holiday")]
-        related += [e for e in day_events if e.source == "warthunder"][:WT_SHOWN]
-        related += [e for e in day_events if e.source == "news"][:NEWS_SHOWN]
-        related += [e for e in day_events if e.source == "wiki"][:WORLD_SHOWN]
+        related = related_events(self.events.for_day(guild_id, day))
         if related:
             lines.append("🔗 **Связанные события:**")
-            lines += [f"{SOURCES[e.source].split()[0]} {short(e.title)}" for e in related]
+            lines += [event_line(e) for e in related]
         return "\n".join(lines)
 
     async def send(self, guild_id: int, day: date | None = None) -> str:

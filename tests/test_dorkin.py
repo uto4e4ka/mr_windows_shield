@@ -149,7 +149,7 @@ async def test_panel_page_chart_and_period(tmp_path):
     assert blocks[1].fields[0].value == "week"
     assert blocks[2].url.startswith("data:image/png;base64,")
     assert [b.title for b in blocks[3:]] == ["📨 Тест в личку и наблюдение", "📊 Утренняя сводка", "🔗 Гостевая ссылка",
-                                            "📅 По дням", "🗓 События и анализ", "🧾 Репорты и тесты"]
+                                            "📓 Журнал дней", "📅 По дням", "🗓 События и анализ", "🧾 Репорты и тесты"]
 
     await plugin.panel.actions["chart_period"](panel, {"period": "day"})
     assert (await page(panel)).blocks[1].fields[0].value == "day"
@@ -179,7 +179,8 @@ async def test_guest_link_page(tmp_path):
     assert "form" not in {b.type for b in blocks} and "button" not in dumped
     assert any(b.type == "link" and b.url == "?period=week" for b in blocks)
     assert "▶ месяц" in dumped.lower()
-    assert [b.title for b in blocks if b.type == "section"] == ["📅 По дням", "🗓 События и анализ", "🧾 Репорты и тесты"]
+    assert [b.title for b in blocks if b.type == "section"] == ["📓 Журнал дней", "📅 По дням", "🗓 События и анализ",
+                                                                 "🧾 Репорты и тесты"]
 
     await plugin.panel.actions["guest_issue"](admin, {})            # перевыпуск — старая не работает
     with pytest.raises(ValueError):

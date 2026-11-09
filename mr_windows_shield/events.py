@@ -67,6 +67,24 @@ class Event(BaseModel):
     url: str = ""
 
 
+RELATED_LIMITS = {"warthunder": 3, "news": 3, "wiki": 2}     # своих и праздников — все
+RELATED_LENGTH = 140
+
+
+def related_events(day_events: list[Event]) -> list[Event]:
+    """Связанные события дня одним списком: свои и праздники, War Thunder, новости мира, Википедия."""
+    related = [e for e in day_events if e.source in ("manual", "holiday")]
+    for source, limit in RELATED_LIMITS.items():
+        related += [e for e in day_events if e.source == source][:limit]
+    return related
+
+
+def event_line(event: Event) -> str:
+    """«✈️ Заголовок» — длинное обрезается."""
+    title = event.title if len(event.title) <= RELATED_LENGTH else event.title[:RELATED_LENGTH - 1] + "…"
+    return f"{SOURCES.get(event.source, event.source).split()[0]} {title}"
+
+
 def _hash(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
 

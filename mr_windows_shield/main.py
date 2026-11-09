@@ -18,6 +18,7 @@ from mr_windows_shield.chart import DEFAULT_PERIOD, PERIODS, render_chart
 from mr_windows_shield.dorkin import DorkinReports
 from mr_windows_shield.events import SOURCES, EventBook
 from mr_windows_shield.guest import GuestLinks
+from mr_windows_shield.journal import Journal
 from mr_windows_shield.index import IndexBook
 from mr_windows_shield.linux_watch import LinuxWatch, parse_words
 from mr_windows_shield.models import MSK, QUESTIONS, DayIndex, format_day, format_time, index_title, level_title
@@ -84,6 +85,7 @@ def create_plugin(ctx: PluginContext) -> Plugin:
     events = EventBook(ctx.data, ctx.settings)
     reports.events = events
     summaries = Summaries(ctx.data, plugin.discord, book, events)
+    journal = Journal(ctx.data, book, events)
     plugin.register(reports, surveys)
     plugin.add_lifespan(surveys.running())
     tracker = ActivityTracker(plugin.nats, book, surveys, str(ctx.settings.get("watch_games") or DEFAULT_GAMES))
@@ -95,7 +97,7 @@ def create_plugin(ctx: PluginContext) -> Plugin:
         """Раз в минуту: подтянуть события (сами решают, пора ли) и отправить утреннюю сводку."""
         async def loop():
             while True:
-                for job in (events.refresh, summaries.tick):
+                for job in (events.refresh, journal.tick, summaries.tick):
                     try:
                         await job()
                     except Exception:
@@ -143,6 +145,7 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             survey_section(guild_id),
             summary_section(guild_id),
             guest_section(guild_id),
+            journal_section(guild_id),
             days_section(guild_id),
             world_section(guild_id),
             events_section(guild_id),
@@ -167,10 +170,19 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             *[Link(url=f"?period={p.key}", label=f"📈 {p.title.capitalize()}") for p in PERIODS.values()
               if p.key != period.key],
             Image(url="data:image/png;base64," + base64.b64encode(png).decode(), alt="График Индекса Доркина"),
+            journal_section(guild_id),
             days_section(guild_id),
             world_section(guild_id, guest=True),
             events_section(guild_id),
         ])
+
+    def journal_section(guild_id: int) -> Section:
+        journal.sync(guild_id)
+        return Section(title="📓 Журнал дней", blocks=[Table(
+            columns=["День", "Дневной", "Общий", "Связанные события"],
+            empty="Первая запись появится, когда закроется день (00:00 МСК)",
+            rows=[TableRow(cells=[format_day(d.day), index_title(d.daily), index_title(d.overall),
+                                  "; ".join(d.events) or "—"]) for d in journal.for_guild(guild_id)[:DAYS_SHOWN]])])
 
     def guest_section(guild_id: int) -> Section:
         token = guests.token(guild_id)
