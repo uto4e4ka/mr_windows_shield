@@ -2,7 +2,7 @@
 name = "mr_windows_shield"
 label = "🛡️ Mr. Windows Shield"
 description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
-version = "1.10.0"
+version = "1.10.1"
 author = "Uto4ka404"
 
 [runtime]

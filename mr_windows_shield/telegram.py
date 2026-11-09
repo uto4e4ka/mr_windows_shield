@@ -20,6 +20,15 @@ RETRY_SECONDS = 15
 logger = logging.getLogger(__name__)
 
 
+class _HideTelegramUrls(logging.Filter):
+    """httpx пишет в лог URL запроса, а в URL Bot API — токен: такие строки не пропускаем."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "api.telegram.org" not in record.getMessage()
+
+
+logging.getLogger("httpx").addFilter(_HideTelegramUrls())
+
+
 class TelegramError(Exception):
     pass
 
