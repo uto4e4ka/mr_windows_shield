@@ -20,6 +20,7 @@ from mr_windows_shield.linux_watch import LinuxWatch, parse_words
 from mr_windows_shield.models import MSK, DayIndex, format_day, format_time, index_title, level_title
 from mr_windows_shield.observe import TOPIC_TITLES, ChatObserver, build_topics
 from mr_windows_shield.summary import SUMMARY_HOUR, Summaries
+from mr_windows_shield.questions import QuestionBank
 from mr_windows_shield.survey import DEFAULT_INTERVAL_HOURS, DELIVERY, Surveys
 from mr_windows_shield.telegram import TelegramBot
 
@@ -66,7 +67,8 @@ def create_plugin(ctx: PluginContext) -> Plugin:
     book = IndexBook(ctx.data)
     reports = DorkinReports(book, plugin.discord)
     telegram = TelegramBot.from_settings(ctx.settings)
-    surveys = Surveys(ctx.data, plugin.discord, book, telegram=telegram)
+    questions = QuestionBank.load(ctx.data_dir)
+    surveys = Surveys(ctx.data, plugin.discord, book, telegram=telegram, bank=questions)
     if telegram:
         plugin.add_lifespan(telegram.running())
     events = EventBook(ctx.data, ctx.settings)
@@ -182,6 +184,10 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             status["Последний тест"] = format_time(target.last_sent_at)
         if target and target.last_error:
             status["Ошибка"] = target.last_error
+        counts = questions.count()
+        status["Вопросы"] = f"{sum(counts.values())} ({' / '.join(map(str, counts.values()))} по темам) — {questions.source}"
+        if questions.error:
+            status["Ошибка в questions.toml"] = f"❌ {questions.error} — пока заданы встроенные вопросы"
         if target:
             status.update(activity_status(guild_id))
         telegram_blocks = telegram_status(target)

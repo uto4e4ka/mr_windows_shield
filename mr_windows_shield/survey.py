@@ -27,7 +27,7 @@ from potehinsonnet.storage import DataDir
 from mr_windows_shield import config
 from mr_windows_shield.index import IndexBook
 from mr_windows_shield.models import MSK, TestResult, dorkin_index, index_title
-from mr_windows_shield.questions import ORIGINAL_IDS, QUESTION_BY_ID, mark_used, pick_questions
+from mr_windows_shield.questions import TOPICS, QuestionBank
 from mr_windows_shield.telegram import TelegramBot, TelegramError, TgButton, TgUpdate
 
 ANSWER_TIME = timedelta(hours=1)
@@ -77,7 +77,7 @@ class PendingSurvey(BaseModel):
     tg_message_id: int | None = None
     sent_at: datetime
     answers: dict[str, int] = Field(default_factory=dict)
-    questions: list[str] = Field(default_factory=lambda: list(ORIGINAL_IDS))    # id вопросов по порядку
+    questions: list[str] = Field(default_factory=lambda: [""] * len(TOPICS))    # id вопросов; "" — исходный вопрос темы
 
     @property
     def step(self) -> int:
@@ -102,22 +102,24 @@ def _telegram(screen: Screen) -> tuple[str, list[list[TgButton]]]:
                   for row in rows]
 
 
-def _answers_text(answers: dict[str, int], questions: list[str]) -> str:
-    asked = [QUESTION_BY_ID[qid] for qid in questions if qid in QUESTION_BY_ID]
+def _answers_text(bank: QuestionBank, answers: dict[str, int], questions: list[str]) -> str:
+    asked = [bank.get(qid, step) for step, qid in enumerate(questions)]
     return "\n".join(f"{q.emoji} {q.text}: **{q.answers[answers[q.key] - 1]}** ({answers[q.key]}/5)"
                      for q in asked if q.key in answers)
 
 
 class Surveys:
     def __init__(self, data: DataDir, discord: DiscordProvider, book: IndexBook,
-                 now: Callable[[], datetime] = lambda: datetime.now(timezone.utc), telegram: TelegramBot | None = None):
+                 now: Callable[[], datetime] = lambda: datetime.now(timezone.utc), telegram: TelegramBot | None = None,
+                 bank: QuestionBank | None = None):
         self.targets = data.collection("survey_targets.json", SurveyTarget, key="guild_id")
         self.pending = data.collection("surveys_pending.json", PendingSurvey, key="id")
         self.discord = discord
         self.book = book
         self.now = now
         self.telegram = telegram
-        self.pick = pick_questions
+        self.bank = bank or QuestionBank.builtin()
+        self.pick = self.bank.pick
         if telegram:
             telegram.handlers.append(self.on_telegram)
 
@@ -197,7 +199,7 @@ class Surveys:
                 continue
             self.pending.delete(survey.id)
             self._save(survey, target.user_name if target else "Доркин", completed=False)
-            done = f"\n\nУспел ответить:\n{_answers_text(survey.answers, survey.questions)}" if survey.answers else ""
+            done = f"\n\nУспел ответить:\n{_answers_text(self.bank, survey.answers, survey.questions)}" if survey.answers else ""
             await self._show(survey, (f"⌛ Время на тест вышло — записано как «уклонился от ответа».{done}", []))
 
     async def _send(self, target: SurveyTarget) -> None:
@@ -232,15 +234,14 @@ class Surveys:
         if errors:
             logger.warning(f"Тест [guild={target.guild_id}, user={target.user_id}]: {target.last_error}")
         if survey.message_id or survey.tg_message_id:
-            target.used_questions = mark_used(target.used_questions, survey.questions)
+            target.used_questions = self.bank.mark_used(target.used_questions, survey.questions)
             self.targets.put(target)
             self.pending.put(survey)
 
-    @staticmethod
-    def _question(survey: PendingSurvey) -> Screen:
+    def _question(self, survey: PendingSurvey) -> Screen:
         survey_id, answers, step = survey.id, survey.answers, survey.step
-        question = QUESTION_BY_ID[survey.questions[step]]
-        done = f"\n\n{_answers_text(answers, survey.questions)}" if answers else ""
+        question = self.bank.get(survey.questions[step], step)
+        done = f"\n\n{_answers_text(self.bank, answers, survey.questions)}" if answers else ""
         return (
             f"{config.PLUGIN_TITLE} · **Плановый тест** · вопрос {step + 1}/{len(survey.questions)}\n"
             f"{question.emoji} **{question.text}**\n"
@@ -301,7 +302,7 @@ class Surveys:
         if step != survey.step:
             return None                     # двойное нажатие по старому вопросу — сообщение уже другое
 
-        survey.answers[QUESTION_BY_ID[survey.questions[step]].key] = value
+        survey.answers[self.bank.get(survey.questions[step], step).key] = value
         if survey.step < len(survey.questions):
             self.pending.put(survey)
             screen = self._question(survey)
@@ -313,7 +314,7 @@ class Surveys:
                 self.targets.put(target)
             result = self._save(survey, target.user_name if target else name, completed=True)
             screen = (f"✅ **Тест пройден** ({PLATFORM[platform]}). Индекс Доркина: **{index_title(result.index)}**"
-                      f"\n\n{_answers_text(result.answers, result.questions)}", [])
+                      f"\n\n{_answers_text(self.bank, result.answers, result.questions)}", [])
         await self._show(survey, screen, skip=platform)
         return screen
 
