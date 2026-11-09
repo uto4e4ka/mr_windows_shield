@@ -6,7 +6,7 @@ from typing import Callable
 
 from pydantic import BaseModel
 from potehinsonnet.net_models.discord_models import (
-    Command, ComponentButton, ComponentButtonStyle, ExecutedCommand, ExecutedCommandResponse,
+    ActionRow, Command, ComponentButton, Container, TextDisplay, ComponentButtonStyle, ExecutedCommand, ExecutedCommandResponse,
     ExecutedComponent, ExecutedComponentResponse, NatsMessage, Placeholder, PlaceholderType,
 )
 from potehinsonnet.discord_provider import DiscordProvider
@@ -55,6 +55,11 @@ def level_title(level: int) -> str:
     return f"{item.emoji} {item.label}"
 
 
+def card(text: str) -> list[Container]:
+    """Скрытое меню — сообщение Components V2: заменить его можно только контейнером, не простым текстом."""
+    return [Container(components=[TextDisplay(content=text)])]
+
+
 def format_time(moment: datetime) -> str:
     return moment.astimezone(MSK).strftime("%d.%m.%Y %H:%M")
 
@@ -94,15 +99,15 @@ class DorkinReports:
     async def report(self, cmd: ExecutedCommand) -> ExecutedCommandResponse:
         if left := self.wait_left(cmd.guild.id, cmd.user.id):
             return ExecutedCommandResponse(message=self._cooldown_text(left), ephemeral=True)
-        return ExecutedCommandResponse(
-            message="**Выберите степень выделения**",
-            ephemeral=True,
-            buttons=[
+        # Бот рисует кнопки только из контейнеров (Components V2), старое поле buttons он не показывает
+        return ExecutedCommandResponse(ephemeral=True, containers=[Container(components=[
+            TextDisplay(content="**Выберите степень выделения**"),
+            ActionRow(components=[
                 ComponentButton(custom_id=f"{REPORT_BUTTON}{ID_SEPARATOR}{number}", label=level.label,
                                 emoji=level.emoji, style=level.style)
                 for number, level in enumerate(LEVELS, start=1)
-            ],
-        )
+            ]),
+        ])])
 
     @button(REPORT_BUTTON)
     async def choose_level(self, executed: ExecutedComponent) -> ExecutedComponentResponse:
@@ -111,11 +116,11 @@ class DorkinReports:
             if not 1 <= level <= len(LEVELS):
                 raise ValueError
         except (IndexError, ValueError):
-            return ExecutedComponentResponse(message="Неизвестная степень выделения", ephemeral=True, edit=True)
+            return ExecutedComponentResponse(containers=card("Неизвестная степень выделения"), ephemeral=True, edit=True)
 
         # Кулдаун проверяем и здесь: скрытое меню могли открыть до прошлого репорта
         if left := self.wait_left(executed.guild.id, executed.user.id):
-            return ExecutedComponentResponse(message=self._cooldown_text(left), ephemeral=True, edit=True)
+            return ExecutedComponentResponse(containers=card(self._cooldown_text(left)), ephemeral=True, edit=True)
 
         name = executed.user.display_name or executed.user.name
         report = self.reports.put(Report(
@@ -133,4 +138,5 @@ class DorkinReports:
                 "user": Placeholder(type=PlaceholderType.MENTION, value=executed.user.id),
             },
         ))
-        return ExecutedComponentResponse(message=f"✅ Репорт отправлен: {level_title(level)}", ephemeral=True, edit=True)
+        return ExecutedComponentResponse(containers=card(f"✅ Репорт отправлен: {level_title(level)}"),
+                                         ephemeral=True, edit=True)

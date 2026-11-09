@@ -39,21 +39,33 @@ def cmd():
     return ExecutedCommand(service="mr_windows_shield", tag="dorkin_report", user=USER, guild=GUILD, channel=CHANNEL)
 
 
+def buttons(response):
+    return [c for container in response.containers for row in container.components
+            if hasattr(row, "components") and not hasattr(row, "content") for c in row.components or []]
+
+
+def text(response):
+    return " ".join(c.content for container in response.containers for c in container.components
+                    if getattr(c, "content", None))
+
+
 def click(level):
     return ExecutedComponent(id=f"{REPORT_BUTTON}|{level}", user=USER, guild=GUILD, channel=CHANNEL, task_id="t")
 
 
 async def test_command_shows_scale_privately(reports):
     response = await reports.report(cmd())
-    assert response.ephemeral
-    assert "степень выделения" in response.message.lower()
-    assert [b.custom_id for b in response.buttons] == [f"{REPORT_BUTTON}|{n}" for n in range(1, len(LEVELS) + 1)]
+    assert response.ephemeral and not response.buttons      # бот показывает только контейнеры
+    title, row = response.containers[0].components
+    assert "степень выделения" in title.content.lower()
+    assert [b.custom_id for b in row.components] == [f"{REPORT_BUTTON}|{n}" for n in range(1, len(LEVELS) + 1)]
 
 
 async def test_choice_saves_report_and_alerts_chat(reports):
     response = await reports.choose_level(click(4))
 
-    assert response.edit and response.ephemeral
+    assert response.edit and response.ephemeral and not response.message   # меню V2 правится только контейнером
+    assert "Репорт отправлен" in text(response)
     saved = reports.for_guild(GUILD.id)
     assert [(r.user_id, r.user_name, r.level, r.channel_id) for r in saved] == [(42, "Вася", 4, 5)]
 
@@ -69,24 +81,24 @@ async def test_cooldown_30_minutes(reports, clock):
 
     clock.value += timedelta(minutes=29)
     blocked = await reports.report(cmd())
-    assert "через 1 мин" in blocked.message and not blocked.buttons
-    assert "через" in (await reports.choose_level(click(2))).message
+    assert "через 1 мин" in blocked.message and not buttons(blocked)
+    assert "через" in text(await reports.choose_level(click(2)))
     assert len(reports.for_guild(GUILD.id)) == 1
 
     clock.value += timedelta(minutes=1)
-    assert (await reports.report(cmd())).buttons
+    assert buttons(await reports.report(cmd()))
 
 
 async def test_cooldown_is_per_guild(reports):
     await reports.choose_level(click(1))
     other = cmd().model_copy(update={"guild": Guild(id=2, name="other")})
-    assert (await reports.report(other)).buttons
+    assert buttons(await reports.report(other))
 
 
 @pytest.mark.parametrize("bad", ["0", "99", "x"])
 async def test_unknown_level_is_rejected(reports, bad):
     response = await reports.choose_level(click(bad))
-    assert "Неизвестная" in response.message
+    assert "Неизвестная" in text(response)
     assert reports.for_guild(GUILD.id) == []
     reports.discord.send_message.assert_not_awaited()
 

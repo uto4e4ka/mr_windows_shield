@@ -1,6 +1,6 @@
 [project]
 name = "mr-windows-shield"
-version = "1.1.0"
+version = "1.1.2"
 description = "Ловит Linux-активность в чате и принимает репорты о Доркине"
 authors = [
     {name = "azhestkov"}
