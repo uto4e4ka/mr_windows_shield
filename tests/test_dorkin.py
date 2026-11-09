@@ -9,7 +9,9 @@ from potehinsonnet.net_models.discord_models import (
 )
 from potehinsonnet.storage import DataDir
 
-from mr_windows_shield.dorkin import LEVELS, REPORT_BUTTON, DorkinReports
+from mr_windows_shield.chart import PERIODS, period_by_name, render_chart
+from mr_windows_shield.dorkin import REPORT_BUTTON, DorkinReports
+from mr_windows_shield.models import LEVELS
 from mr_windows_shield.linux_watch import find_word, parse_words
 from mr_windows_shield.main import create_plugin
 
@@ -114,3 +116,36 @@ def test_plugin_builds_from_manifest(tmp_path):
     ctx = PluginContext(root=ROOT, manifest=load_manifest(ROOT), data_dir=tmp_path)
     plugin = create_plugin(ctx)
     assert plugin.service.name == "mr_windows_shield"
+
+
+async def test_chart_command_sends_png(reports, clock):
+    await reports.choose_level(click(3))
+    response = await reports.chart(cmd())
+    assert not response.ephemeral
+    assert response.files[0].filename == "dorkin_chart.png"
+    assert response.files[0].content().startswith(b"\x89PNG")
+    gallery = response.containers[0].components[1]
+    assert gallery.items[0].url == "attachment://dorkin_chart.png"
+
+
+@pytest.mark.parametrize("name, key", [(None, "week"), ("сутки", "day"), ("Месяц", "month"), ("ерунда", "week")])
+def test_period_by_name(name, key):
+    assert period_by_name(name).key == key
+
+
+def test_chart_without_reports_renders(clock):
+    assert render_chart([], PERIODS["day"], clock()).startswith(b"\x89PNG")
+
+
+async def test_panel_page_chart_and_period(tmp_path):
+    from potehinsonnet.net_models.panel_ui import PanelActor, PanelContext
+    plugin = create_plugin(PluginContext(root=ROOT, manifest=load_manifest(ROOT), data_dir=tmp_path))
+    panel = PanelContext(guild_id=1, user=PanelActor.model_construct(id=1, name="admin"))
+    _, page = plugin.panel.pages["dorkin_reports"]
+
+    blocks = (await page(panel)).blocks
+    assert blocks[0].fields[0].value == "week"
+    assert blocks[1].url.startswith("data:image/png;base64,")
+
+    await plugin.panel.actions["chart_period"](panel, {"period": "day"})
+    assert (await page(panel)).blocks[0].fields[0].value == "day"

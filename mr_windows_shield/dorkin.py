@@ -1,12 +1,10 @@
 """/dorkin report: автор скрыто выбирает степень выделения, в чат уходит предупреждение, репорт сохраняется."""
 import uuid
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from pydantic import BaseModel
 from potehinsonnet.net_models.discord_models import (
-    ActionRow, Command, ComponentButton, Container, TextDisplay, ComponentButtonStyle, ExecutedCommand, ExecutedCommandResponse,
+    ActionRow, Attachment, Command, CommandArgument, MediaGallery, MediaItem, ComponentButton, Container, TextDisplay, ComponentButtonStyle, ExecutedCommand, ExecutedCommandResponse,
     ExecutedComponent, ExecutedComponentResponse, NatsMessage, Placeholder, PlaceholderType,
 )
 from potehinsonnet.discord_provider import DiscordProvider
@@ -15,53 +13,18 @@ from potehinsonnet.setup.command_registrator import command
 from potehinsonnet.storage import DataDir
 
 from mr_windows_shield import config
+from mr_windows_shield.chart import period_by_name, render_chart
+from mr_windows_shield.models import LEVELS, Report, format_time, level_title
 
 COOLDOWN = timedelta(minutes=30)        # один репорт от человека на сервере раз в 30 минут
 PERMISSION = "mr_windows_shield.dorkin.report"
 REPORT_BUTTON = "dorkin_report"
-MSK = timezone(timedelta(hours=3))      # время в сообщении и в панели — московское
-
-
-@dataclass(frozen=True)
-class Level:
-    label: str                  # кнопка в скрытом сообщении
-    emoji: str
-    style: ComponentButtonStyle
-    alert: str                  # что пишется в чат после «Внимание! Замечен…»
-
-
-# Шкала выделения: порядок = степень (1 — слабее всего)
-LEVELS: list[Level] = [
-    Level("Лёгкое", "🟢", ComponentButtonStyle.SUCCESS, "Доркин. Лёгкое выделение, ситуация под контролем."),
-    Level("Умеренное", "🟡", ComponentButtonStyle.SECONDARY, "Доркин. Умеренное выделение, сохраняйте бдительность."),
-    Level("Сильное", "🟠", ComponentButtonStyle.PRIMARY, "Доркин. Сильное выделение, держитесь подальше."),
-    Level("Обильное", "🔴", ComponentButtonStyle.DANGER, "Доркин. Обильное выделение, наденьте средства защиты!"),
-    Level("Критическое", "☢️", ComponentButtonStyle.DANGER, "ДОРКИН. КРИТИЧЕСКОЕ ВЫДЕЛЕНИЕ. ЭВАКУАЦИЯ!"),
-]
-
-
-class Report(BaseModel):
-    id: str
-    guild_id: int
-    channel_id: int
-    user_id: int
-    user_name: str
-    level: int                  # 1..len(LEVELS)
-    created_at: datetime        # UTC
-
-
-def level_title(level: int) -> str:
-    item = LEVELS[level - 1]
-    return f"{item.emoji} {item.label}"
+CHART_FILE = "dorkin_chart.png"
 
 
 def card(text: str) -> list[Container]:
     """Скрытое меню — сообщение Components V2: заменить его можно только контейнером, не простым текстом."""
     return [Container(components=[TextDisplay(content=text)])]
-
-
-def format_time(moment: datetime) -> str:
-    return moment.astimezone(MSK).strftime("%d.%m.%Y %H:%M")
 
 
 class DorkinReports:
@@ -140,3 +103,25 @@ class DorkinReports:
         ))
         return ExecutedComponentResponse(containers=card(f"✅ Репорт отправлен: {level_title(level)}"),
                                          ephemeral=True, edit=True)
+
+    @command(Command(
+        name="chart",
+        group="dorkin",
+        description="График степени выделения Доркина",
+        tag="dorkin_chart",
+        permission=PERMISSION,
+        ephemeral=False,
+        args=[CommandArgument(name="period", description="сутки, неделя или месяц (по умолчанию неделя)",
+                              required=False)],
+    ))
+    async def chart(self, cmd: ExecutedCommand) -> ExecutedCommandResponse:
+        period = period_by_name(next((a.value for a in cmd.args if a.name == "period"), None))
+        image = render_chart(self.for_guild(cmd.guild.id), period, self.now())
+        return ExecutedCommandResponse(
+            ephemeral=False,
+            files=[Attachment.from_bytes(image, CHART_FILE, description="График выделения")],
+            containers=[Container(components=[
+                TextDisplay(content=f"📈 **Степень выделения Доркина за {period.title}**"),
+                MediaGallery(items=[MediaItem(url=f"attachment://{CHART_FILE}")]),
+            ])],
+        )
