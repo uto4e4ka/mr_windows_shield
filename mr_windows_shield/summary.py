@@ -67,7 +67,7 @@ class Summaries:
         book = self.book
         record = book.days.get(day_id(guild_id, day))
         before = book.days.get(day_id(guild_id, day - timedelta(days=1)))
-        lines = [f"📊 **Сводка Индекса Доркина за {format_day(day)}**"]
+        lines = [f"📊 **Сводка индекса выделения Доркина за {format_day(day)}**"]
         if record:
             lines.append(f"Дневной: **{index_title(record.daily)}**{delta(record.daily, before.daily if before else None)}")
             lines.append(f"Общий: **{index_title(record.overall)}**"

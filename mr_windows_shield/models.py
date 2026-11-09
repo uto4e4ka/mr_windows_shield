@@ -40,7 +40,7 @@ def level_for_index(index: float) -> int:
 def index_title(index: float | None) -> str:
     if index is None:
         return "нет данных"
-    return f"{round(index)} · {level_title(level_for_index(index))}"
+    return f"{round(index)} · {level_title(level_for_index(index))} выделение"
 
 
 # --- тест в личке ------------------------------------------------------------------------

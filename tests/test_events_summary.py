@@ -155,8 +155,8 @@ async def test_summary_text_and_send(tmp_path, book):
 
     text = summaries.text(GUILD, d19)
     assert "за 19.11.2026" in text
-    assert "Дневной: **71 · 🔴 Обильное** (▲ +12)" in text
-    assert "Общий: **54 · 🟠 Сильное** (▲ +4.2)" in text
+    assert "Дневной: **71 · 🔴 Обильное выделение** (▲ +12)" in text
+    assert "Общий: **54 · 🟠 Сильное выделение** (▲ +4.2)" in text
     assert "1 пройдено, 0 уклонился · Репорты: 0 · Наблюдение: 35 очк. (🍗 аэрогриль 12, ✈️ War Thunder 6)" in text
     assert "🍗 5.0" in text and "🔗 **Связанные события:**\n✍️ Вышло обновление WT\n🌍 Что-то в мире" in text
     assert "…" in text
