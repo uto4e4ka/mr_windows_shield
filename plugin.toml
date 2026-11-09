@@ -2,7 +2,7 @@
 name = "mr_windows_shield"
 label = "🛡️ Mr. Windows Shield"
 description = "Ловит Linux-активность и ведёт Индекс Доркина: репорты, тест в личке, наблюдение за чатом"
-version = "1.7.0"
+version = "1.8.0"
 author = "Uto4ka404"
 
 [runtime]
@@ -69,3 +69,8 @@ default = ""
 label = "Telegram: прокси"
 description = "Если api.telegram.org недоступен с сервера, например http://127.0.0.1:10809 (только http/https). Пусто — напрямую"
 default = ""
+
+[settings.watch_games]
+label = "Активность: игры для ломки"
+description = "Названия игр в статусе Discord через запятую. Не играет — индекс растёт (ломка), наигрался 2 ч — снижается"
+default = "war thunder, warthunder"

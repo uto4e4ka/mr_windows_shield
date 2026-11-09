@@ -10,6 +10,7 @@ from potehinsonnet.net_models.discord_models import (
 )
 
 from mr_windows_shield import config
+from mr_windows_shield.activity import describe
 from mr_windows_shield.chart import PERIODS, render_chart
 from mr_windows_shield.events import SOURCES, EventBook
 from mr_windows_shield.index import IndexBook, day_id
@@ -85,6 +86,14 @@ class Summaries:
             (seen.reasons if seen else {}).items(), key=lambda kv: -kv[1])[:3])
         lines.append(f"Тесты: {len(done)} пройдено, {len(tests) - len(done)} уклонился · Репорты: {len(reports)}"
                      f" · Наблюдение: {seen.points if seen else 0} очк." + (f" ({why})" if why else ""))
+        activity = book.activity.get(day_id(guild_id, day))
+        if activity:
+            line = f"Активность: {describe(activity)}"
+            if record and record.withdrawal > 0:
+                line += f" · ломка {record.withdrawal_streak}-й день **+{record.withdrawal:g}**"
+            elif record and record.withdrawal < 0:
+                line += f" · наигрался **{record.withdrawal:g}**"
+            lines.append(line)
         if done:
             averages = " · ".join(
                 f"{q.emoji} {sum(t.answers.get(q.key, 0) for t in done) / len(done):.1f}" for q in QUESTIONS)

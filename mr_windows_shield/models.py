@@ -142,5 +142,9 @@ class DayIndex(BaseModel):
     reports: float              # вклад /dorkin report (±10)
     observation: float          # вклад наблюдения (до +15)
     missed: float               # +5 за каждое уклонение
+    activity: float = 0         # войс, онлайн, ночь, «не беспокоить»
+    activity_reasons: dict[str, int] = Field(default_factory=dict)
+    withdrawal: float = 0       # ломка по War Thunder (−3 … +15)
+    withdrawal_streak: int = 0  # какой день подряд без игры
     daily: float                # итог 0–100
     overall: float | None = None    # общий после закрытия дня; None — день ещё идёт

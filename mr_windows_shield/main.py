@@ -11,12 +11,13 @@ from potehinsonnet.net_models.panel_ui import (
     Select, Table, TableRow, Text, TextField, Toggle,
 )
 
+from mr_windows_shield.activity import ACTIVITY_TITLES, DEFAULT_GAMES, ActivityTracker, describe
 from mr_windows_shield.chart import DEFAULT_PERIOD, PERIODS, render_chart
 from mr_windows_shield.dorkin import DorkinReports
 from mr_windows_shield.events import SOURCES, EventBook
 from mr_windows_shield.index import IndexBook
 from mr_windows_shield.linux_watch import LinuxWatch, parse_words
-from mr_windows_shield.models import DayIndex, format_day, format_time, index_title, level_title
+from mr_windows_shield.models import MSK, DayIndex, format_day, format_time, index_title, level_title
 from mr_windows_shield.observe import TOPIC_TITLES, ChatObserver, build_topics
 from mr_windows_shield.summary import SUMMARY_HOUR, Summaries
 from mr_windows_shield.survey import DEFAULT_INTERVAL_HOURS, DELIVERY, Surveys
@@ -44,7 +45,19 @@ def signed(value: float) -> str:
 def breakdown(day: DayIndex) -> str:
     base = f"{day.base:g} ({'тест' if day.base_from_test else 'общий'})"
     return (f"{base} {signed(day.reports)} репорты {signed(day.observation)} наблюдение "
+            f"{signed(day.activity)} активность {signed(day.withdrawal)} ломка "
             f"{signed(day.missed)} уклонения = {day.daily:g}")
+
+
+def activity_text(day: DayIndex) -> str:
+    parts = [f"{ACTIVITY_TITLES.get(k, k)} +{v}" for k, v in day.activity_reasons.items()]
+    return ", ".join(parts) or "0"
+
+
+def withdrawal_text(day: DayIndex) -> str:
+    if day.withdrawal > 0:
+        return f"+{day.withdrawal:g} ({day.withdrawal_streak}-й день без игры)"
+    return f"{day.withdrawal:g} (наигрался)" if day.withdrawal < 0 else "0"
 
 
 def create_plugin(ctx: PluginContext) -> Plugin:
@@ -61,6 +74,8 @@ def create_plugin(ctx: PluginContext) -> Plugin:
     summaries = Summaries(ctx.data, plugin.discord, book, events)
     plugin.register(reports, surveys)
     plugin.add_lifespan(surveys.running())
+    tracker = ActivityTracker(plugin.nats, book, surveys, str(ctx.settings.get("watch_games") or DEFAULT_GAMES))
+    plugin.add_lifespan(tracker.running())
     plugin.add_lifespan(ChatObserver(plugin.nats, book, surveys, build_topics(ctx.settings), plugin.discord).running())
 
     @asynccontextmanager
@@ -167,10 +182,12 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             status["Последний тест"] = format_time(target.last_sent_at)
         if target and target.last_error:
             status["Ошибка"] = target.last_error
+        if target:
+            status.update(activity_status(guild_id))
         telegram_blocks = telegram_status(target)
         return Section(title="📨 Тест в личку и наблюдение", collapsed=target is not None, blocks=[
             Text("Выбранного человека бот раз в N часов просит пройти тест (в личке Discord и/или в Telegram) (ночью 00:00–09:00 МСК не пишет) "
-                 "и следит за его сообщениями на сервере. Слова для наблюдения — в настройках плагина."),
+                 "и следит за его сообщениями, войсом, статусом и играми на сервере. Слова для наблюдения — в настройках плагина."),
             KeyValue(items=status),
             Form(action="survey_setup", submit="Сохранить", fields=[
                 MemberPicker(name="user_id", label="За кем наблюдать", value=target.user_id if target else None),
@@ -184,6 +201,27 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             Button(action="survey_send_now", label="📨 Отправить тест сейчас", style="primary",
                    disabled=target is None or target.unsubscribed),
         ])
+
+    def activity_status(guild_id: int) -> dict[str, str]:
+        live = tracker.live.get(guild_id)
+        items = {}
+        if tracker.last_error:
+            items["Активность"] = f"❌ бот не отвечает: {tracker.last_error} (нужна новая версия бота)"
+        elif live is not None:
+            now = []
+            if live.voice_since:
+                now.append("🎙 в войсе")
+            if live.presence_known:
+                now.append({"online": "🟢 в сети", "idle": "🌙 отошёл", "dnd": "⛔ не беспокоить"}.get(
+                    live.status or "", "⚫ не в сети"))
+                if live.activities:
+                    now.append("играет: " + ", ".join(live.activities))
+            else:
+                now.append("статусы не видны — включите интент Presence в Discord Developer Portal")
+            items["Сейчас"] = " · ".join(now)
+        today = tracker.record(guild_id, book.now().astimezone(MSK).date())
+        items["Сегодня"] = describe(today) or "—"
+        return items
 
     def telegram_status(target) -> list:
         """Привязка Telegram: ссылка для Start, кто привязан, ошибки связи."""
@@ -211,11 +249,13 @@ def create_plugin(ctx: PluginContext) -> Plugin:
             rows.append(TableRow(cells=[
                 format_day(day.day) + ("" if day.overall is not None else " (сегодня)"),
                 f"{day.daily:g}", f"{day.base:g} {'тест' if day.base_from_test else 'общий'}",
-                signed(day.reports), f"{signed(day.observation)}" + (f" ({why})" if why else ""), signed(day.missed),
+                signed(day.reports), f"{signed(day.observation)}" + (f" ({why})" if why else ""),
+                activity_text(day), withdrawal_text(day), signed(day.missed),
                 f"{day.overall:g}" if day.overall is not None else "—",
             ]))
         return Section(title="📅 По дням", blocks=[Table(
-            columns=["День", "Дневной", "Основа", "Репорты", "Наблюдение", "Уклонения", "Общий"],
+            columns=["День", "Дневной", "Основа", "Репорты", "Наблюдение", "Активность", "Ломка WT", "Уклонения",
+                     "Общий"],
             empty="Индекс начнётся с первого пройденного теста", rows=rows)])
 
     def events_section(guild_id: int) -> Section:
